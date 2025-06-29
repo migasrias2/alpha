@@ -1,71 +1,226 @@
-# React + Vite + shadcn/ui Template
+# AI Agency Pro - AI Mentorship Platform
 
-A modern web application template using React, TypeScript, Vite, shadcn/ui components, and Tailwind CSS.
+A comprehensive web-based learning platform designed to help web agencies learn how to replace bloated teams with AI-powered workflows. Built with React, TypeScript, and shadcn/ui.
 
-## Technologies
+## 🚀 Overview
 
-This template includes:
+AI Agency Pro is a mentorship platform that teaches web agency owners how to:
+- Use AI tools like Cursor, GPT, Claude, and automation
+- Cut operational costs by 80%
+- Scale efficiently without hiring more people
+- Replace manual tasks with smart AI workflows
 
-- [Vite](https://vitejs.dev/) - Next-generation frontend tooling
-- [React](https://reactjs.org/) - A JavaScript library for building user interfaces
-- [TypeScript](https://www.typescriptlang.org/) - JavaScript with syntax for types
-- [shadcn/ui](https://ui.shadcn.com/) - Re-usable components built with Radix UI and Tailwind CSS
-- [Tailwind CSS](https://tailwindcss.com/) - A utility-first CSS framework
+## ✨ Features
 
-## Getting Started
+### 🎯 Core Features
+- **Landing Page** - Compelling value proposition and conversion-focused design
+- **Authentication** - Secure login/signup system (ready for Supabase integration)
+- **Dashboard** - Progress tracking, course overview, and stats
+- **Course System** - Detailed courses with lessons, progress tracking, and resources
+- **AI Tools Library** - Downloadable templates, prompts, and automation scripts
+- **Progress Tracking** - Goals, achievements, and learning analytics
 
-### STEP 1 Option A (Recommended) ⭐
-Use GitHub's template feature to create your project:
-1. Click the "Use this template" button above
-2. Select "Create a new repository"
-3. Choose your repository name and settings
-4. Click "Create repository from template"
+### 🛠 Technical Features
+- Modern React with TypeScript
+- Responsive design with Tailwind CSS
+- Beautiful UI components with shadcn/ui
+- Smooth animations with Framer Motion
+- State management with React Query
+- Routing with React Router
+- Ready for Supabase backend integration
 
-### STEP 1 Option B (Alternative)
-If you prefer to start manually:
-```sh
-# Clone the template repository
-git clone https://github.com/bobby-io/react-vite-shadcn-template
-cd react-vite-shadcn-template
+## 🏗 Project Structure
 
-# Remove the existing git history
-rm -rf .git
-
-# Initialize as a fresh git repository
-git init
+```
+src/
+├── components/
+│   ├── ui/              # shadcn/ui components
+│   └── Welcome.tsx      # Landing page component
+├── pages/
+│   ├── Index.tsx        # Home page
+│   ├── Login.tsx        # Authentication pages
+│   ├── Signup.tsx
+│   ├── Dashboard.tsx    # Main user dashboard
+│   ├── Course.tsx       # Individual course detail
+│   └── NotFound.tsx     # 404 page
+├── lib/
+│   ├── utils.ts         # Utility functions
+│   └── supabase.ts      # Database configuration
+├── hooks/
+│   └── use-toast.ts     # Toast notifications
+└── App.tsx              # Main app with routing
 ```
 
-### STEP 2 - Next Steps (Required)
-1. Install dependencies:
-```sh
+## 🚀 Getting Started
+
+### Prerequisites
+- Node.js 18+ 
+- npm or bun
+
+### Installation
+
+1. **Clone the repository**
+   ```bash
+   git clone <your-repo-url>
+   cd ai-agency-pro
+   ```
+
+2. **Install dependencies**
+   ```bash
 npm install
+   # or
+   bun install
 ```
 
-2. Start the development server:
-```sh
+3. **Start the development server**
+   ```bash
 npm run dev
+   # or
+   bun dev
+   ```
+
+4. **Open your browser**
+   Navigate to `http://localhost:5173`
+
+## 📱 Pages & Features
+
+### Landing Page (`/`)
+- Hero section with clear value proposition
+- Problem/solution framework
+- Feature highlights
+- Social proof and testimonials
+- Call-to-action for signup
+
+### Authentication (`/login`, `/signup`)
+- Clean, professional login/signup forms
+- Form validation and error handling
+- Demo credentials for testing
+- Ready for Supabase auth integration
+
+### Dashboard (`/dashboard`)
+- Welcome section with user stats
+- Course progress overview
+- Recent activity feed
+- Tabbed navigation for:
+  - Overview
+  - Courses
+  - AI Tools
+  - Progress & Goals
+
+### Course Detail (`/course/:id`)
+- Course information and instructor bio
+- Lesson curriculum with progress tracking
+- Downloadable resources
+- Community section (coming soon)
+
+## 🎨 Design System
+
+### Color Scheme
+- Primary: Blue (#3B82F6)
+- Secondary: Gray (#6B7280)
+- Success: Green (#10B981)
+- Warning: Yellow (#F59E0B)
+- Error: Red (#EF4444)
+
+### Typography
+- Headings: Inter font family
+- Body: System font stack
+- Code: Monospace
+
+### Components
+All UI components use shadcn/ui for consistency:
+- Buttons, Cards, Forms
+- Navigation, Tabs, Progress bars
+- Modals, Toasts, Tooltips
+
+## 🔧 Customization
+
+### Adding New Courses
+1. Update the course data in `Dashboard.tsx`
+2. Create corresponding course detail pages
+3. Add navigation links
+
+### Integrating Supabase
+1. Update environment variables in `supabase.ts`
+2. Replace mock authentication in login/signup pages
+3. Connect dashboard data to real database
+
+### Styling
+- Modify `tailwind.config.ts` for theme customization
+- Update component styles in individual files
+- Use CSS variables for consistent theming
+
+## 🚀 Deployment
+
+### Build for Production
+```bash
+npm run build
+# or
+bun run build
 ```
 
-This will give you a fresh start with your own repository while maintaining all the template's features and configurations.
+### Deploy Options
+- **Vercel** (Recommended)
+- **Netlify**
+- **AWS S3 + CloudFront**
+- **Traditional hosting**
 
-## Development
+## 📋 Next Steps
 
-- Run development server: `npm run dev`
-- Build for production: `npm run build`
-- Preview production build: `npm run preview`
+### Phase 1: MVP
+- [x] Landing page and core navigation
+- [x] Authentication pages
+- [x] Dashboard with course overview
+- [x] Course detail pages
+- [ ] Supabase integration
+- [ ] User progress tracking
 
-## Customization
+### Phase 2: Enhanced Features
+- [ ] Video lesson player
+- [ ] Real-time progress updates
+- [ ] Community features
+- [ ] Payment integration
+- [ ] Admin dashboard
 
-- Update the configuration in `vite.config.ts` to customize your build
-- Modify theme settings in `tailwind.config.js`
-- Add or modify components in the `src/components` directory
-- Update global styles in `src/index.css`
+### Phase 3: Advanced Features
+- [ ] AI-powered recommendations
+- [ ] Live mentorship calls
+- [ ] Certificate generation
+- [ ] Mobile app
 
-## Deployment
+## 💰 Business Model
 
-This template can be deployed to various platforms:
+### Revenue Streams
+1. **Monthly Subscriptions** - $97/month for full access
+2. **Annual Plans** - $997/year (2 months free)
+3. **Enterprise** - Custom pricing for agencies with 10+ people
+4. **One-time Courses** - $197-$497 per specialized course
 
-- [Vercel](https://vercel.com/)
-- [Netlify](https://www.netlify.com/)
-- [GitHub Pages](https://pages.github.com/)
-- Any other platform that supports static site hosting
+### Target Market
+- Web agency owners (1-50 employees)
+- Freelance web developers looking to scale
+- Digital marketing agencies
+- SaaS companies needing content
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Test thoroughly
+5. Submit a pull request
+
+## 📄 License
+
+This project is proprietary. All rights reserved.
+
+## 📞 Support
+
+For questions or support:
+- Email: support@aiagencypro.com
+- Documentation: [Link to docs]
+- Community: [Link to Discord/Slack]
+
+---
+
+**Built with ❤️ for the future of web agencies**
