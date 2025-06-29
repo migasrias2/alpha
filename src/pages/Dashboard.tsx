@@ -211,7 +211,10 @@ const Dashboard = () => {
             <Button variant="ghost" onClick={handleSignOut} className="text-black hover:bg-black/5 rounded-full">
               👋 Sign Out
             </Button>
-            <Avatar className="ring-2 ring-gray-200">
+            <Avatar 
+              className="ring-2 ring-gray-200 cursor-pointer hover:ring-black transition-all duration-200" 
+              onClick={() => navigate('/profile')}
+            >
               <AvatarImage src={userProfile?.avatar_url} />
               <AvatarFallback className="bg-black text-white">
                 {userProfile?.first_name?.[0]}{userProfile?.last_name?.[0] || user.email?.[0]?.toUpperCase()}
