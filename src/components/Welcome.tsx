@@ -4,9 +4,23 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { ArrowRight, Star } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { useState, useEffect } from "react";
 
 const Welcome = () => {
   const navigate = useNavigate();
+  const [showFloatingNav, setShowFloatingNav] = useState(false);
+
+  // Scroll detection for floating navbar
+  useEffect(() => {
+    const handleScroll = () => {
+      const scrollY = window.scrollY;
+      // Show floating navbar when scrolled past 100px
+      setShowFloatingNav(scrollY > 100);
+    };
+
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
 
   const features = [
     {
@@ -40,8 +54,14 @@ const Welcome = () => {
 
   return (
     <div className="min-h-screen bg-white">
-      {/* Header */}
-      <div className="relative z-20 sticky top-0">
+      {/* Original Header - Hidden when floating */}
+      <motion.div 
+        className="relative z-20 sticky top-0"
+        animate={{
+          opacity: showFloatingNav ? 0 : 1,
+        }}
+        transition={{ duration: 0.3 }}
+      >
         <div className="container mx-auto px-6 py-6 flex items-center justify-between">
           <div className="flex items-center space-x-2">
             <span className="text-2xl font-bold text-black">opsa</span>
@@ -55,7 +75,41 @@ const Welcome = () => {
             </Button>
           </div>
         </div>
-      </div>
+      </motion.div>
+
+      {/* Floating Rounded Navbar */}
+      <motion.div
+        initial={{ y: -100, opacity: 0 }}
+        animate={{ 
+          y: showFloatingNav ? 0 : -100, 
+          opacity: showFloatingNav ? 1 : 0 
+        }}
+        transition={{ duration: 0.4, ease: "easeInOut" }}
+        className="fixed top-6 right-6 z-50"
+      >
+        <div className="bg-white/90 backdrop-blur-xl border border-white/30 shadow-2xl rounded-full px-8 py-4">
+          <div className="flex items-center justify-between space-x-8">
+            <div className="flex items-center space-x-2">
+              <span className="text-xl font-bold text-black">opsa</span>
+            </div>
+            <div className="flex items-center space-x-3">
+              <Button 
+                variant="ghost" 
+                onClick={() => navigate('/login')} 
+                className="text-black hover:bg-black/10 rounded-full px-4 py-2 text-sm"
+              >
+                Login
+              </Button>
+              <Button 
+                onClick={() => navigate('/signup')} 
+                className="bg-black text-white hover:bg-gray-800 rounded-full px-5 py-2 text-sm"
+              >
+                Get Started
+              </Button>
+            </div>
+          </div>
+        </div>
+      </motion.div>
 
       {/* Hero Section */}
       <section className="relative min-h-screen flex items-center justify-center bg-white overflow-hidden">

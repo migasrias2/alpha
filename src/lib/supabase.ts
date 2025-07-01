@@ -227,6 +227,42 @@ export const db = {
     const completed = completedModules?.length || 0
     
     return totalModules > 0 ? Math.round((completed / totalModules) * 100) : 0
+  },
+
+  // Calendar notes operations
+  getCalendarNotes: async (userId: string) => {
+    return await supabase
+      .from('calendar_notes')
+      .select('*')
+      .eq('user_id', userId)
+  },
+
+  saveCalendarNote: async (userId: string, dateKey: string, noteText: string) => {
+    return await supabase
+      .from('calendar_notes')
+      .upsert({
+        user_id: userId,
+        date_key: dateKey,
+        note_text: noteText,
+        updated_at: new Date().toISOString()
+      })
+  },
+
+  deleteCalendarNote: async (userId: string, dateKey: string) => {
+    return await supabase
+      .from('calendar_notes')
+      .delete()
+      .eq('user_id', userId)
+      .eq('date_key', dateKey)
+  },
+
+  getCalendarNote: async (userId: string, dateKey: string) => {
+    return await supabase
+      .from('calendar_notes')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('date_key', dateKey)
+      .single()
   }
 }
 

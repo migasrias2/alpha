@@ -34,6 +34,15 @@ const Dashboard = () => {
   const [selectedTab, setSelectedTab] = useState("overview");
   const [userProfile, setUserProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  
+  // Calendar state
+  const [currentDate, setCurrentDate] = useState(new Date());
+  const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+  const [calendarNotes, setCalendarNotes] = useState<{[key: string]: string}>({});
+  const [isAddingNote, setIsAddingNote] = useState(false);
+  const [noteText, setNoteText] = useState("");
+  const [notesLoading, setNotesLoading] = useState(true);
+  const [savingNote, setSavingNote] = useState(false);
 
   // Redirect if not authenticated
   useEffect(() => {
@@ -60,6 +69,39 @@ const Dashboard = () => {
     };
 
     loadData();
+  }, [user]);
+
+  // Load calendar notes from database
+  useEffect(() => {
+    const loadCalendarNotes = async () => {
+      if (!user) {
+        setNotesLoading(false);
+        return;
+      }
+
+      try {
+        const { data: notes, error } = await db.getCalendarNotes(user.id);
+        
+        if (error) {
+          console.error('Error loading calendar notes:', error);
+          return;
+        }
+
+        // Convert notes array to object for easier lookup
+        const notesObject: {[key: string]: string} = {};
+        notes?.forEach(note => {
+          notesObject[note.date_key] = note.note_text;
+        });
+        
+        setCalendarNotes(notesObject);
+      } catch (error) {
+        console.error('Error loading calendar notes:', error);
+      } finally {
+        setNotesLoading(false);
+      }
+    };
+
+    loadCalendarNotes();
   }, [user]);
 
   const handleSignOut = async () => {
@@ -167,9 +209,239 @@ const Dashboard = () => {
     };
   }, [user]);
 
-  const aiTools: any[] = []; // Empty until we add real tools
+  const aiTools = [
+    {
+      name: "Lovable",
+      description: "Build something Lovable - Create apps and websites by chatting with AI",
+      url: "https://lovable.dev/#via=897192",
+      category: "Development",
+      emoji: "💖",
+      rating: "4.9",
+      downloads: "10k+",
+      unlocked: true
+    },
+    {
+      name: "Replit",
+      description: "Code, create, and learn together in the browser with instant environments",
+      url: "https://replit.com/refer/bobbyio",
+      category: "Development", 
+      emoji: "🔧",
+      rating: "4.8",
+      downloads: "50k+",
+      unlocked: true
+    },
+    {
+      name: "Bolt",
+      description: "AI-powered development platform for rapid prototyping and deployment",
+      url: "https://bolt.new/?rid=9cce34",
+      category: "Deployment",
+      emoji: "⚡",
+      rating: "4.7",
+      downloads: "25k+",
+      unlocked: true
+    },
+    {
+      name: "v0",
+      description: "Generate UI components with AI - Vercel's design-to-code platform",
+      url: "https://v0.dev/",
+      category: "Design",
+      emoji: "🎨",
+      rating: "4.9",
+      downloads: "30k+",
+      unlocked: true
+    },
+    {
+      name: "Tempo",
+      description: "Modern AI-powered development workflow and collaboration platform",
+      url: "https://www.tempo.new/",
+      category: "Workflow",
+      emoji: "🚀",
+      rating: "4.6",
+      downloads: "15k+",
+      unlocked: true
+    },
+    {
+      name: "Same",
+      description: "AI development assistant for seamless coding and project management",
+      url: "https://same.dev/",
+      category: "Development",
+      emoji: "🤖",
+      rating: "4.8",
+      downloads: "20k+",
+      unlocked: true
+    },
+    {
+      name: "Onlook",
+      description: "Visual development environment with AI-powered design capabilities",
+      url: "https://onlook.com/",
+      category: "Visual",
+      emoji: "👁️",
+      rating: "4.7",
+      downloads: "12k+",
+      unlocked: true
+    }
+  ];
 
   const recentActivity: any[] = []; // Empty until we track real activity
+
+  // Calendar helper functions
+  const getDaysInMonth = (date: Date) => {
+    return new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+  };
+
+  const getFirstDayOfMonth = (date: Date) => {
+    return new Date(date.getFullYear(), date.getMonth(), 1).getDay();
+  };
+
+  const formatDateKey = (date: Date) => {
+    return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+  };
+
+  const navigateMonth = (direction: 'prev' | 'next') => {
+    setCurrentDate(prev => {
+      const newDate = new Date(prev);
+      if (direction === 'prev') {
+        newDate.setMonth(prev.getMonth() - 1);
+      } else {
+        newDate.setMonth(prev.getMonth() + 1);
+      }
+      return newDate;
+    });
+  };
+
+  const selectDate = (day: number) => {
+    const selected = new Date(currentDate.getFullYear(), currentDate.getMonth(), day);
+    setSelectedDate(selected);
+    const dateKey = formatDateKey(selected);
+    setNoteText(calendarNotes[dateKey] || "");
+  };
+
+  const saveNote = async () => {
+    if (selectedDate && user) {
+      const dateKey = formatDateKey(selectedDate);
+      setSavingNote(true);
+      
+      try {
+        const { error } = await db.saveCalendarNote(user.id, dateKey, noteText);
+        
+        if (error) {
+          console.error('Error saving note:', error);
+          toast({
+            title: "Error saving note ❌",
+            description: "Failed to save note. Please try again.",
+            variant: "destructive",
+          });
+          return;
+        }
+
+        // Update local state
+        setCalendarNotes(prev => ({
+          ...prev,
+          [dateKey]: noteText
+        }));
+        setIsAddingNote(false);
+        
+        toast({
+          title: "Note saved! 📝",
+          description: `Note added for ${selectedDate.toLocaleDateString()}`,
+        });
+      } catch (error) {
+        console.error('Error saving note:', error);
+        toast({
+          title: "Error saving note ❌",
+          description: "Failed to save note. Please try again.",
+          variant: "destructive",
+        });
+      } finally {
+        setSavingNote(false);
+      }
+    }
+  };
+
+  const deleteNote = async () => {
+    if (selectedDate && user) {
+      const dateKey = formatDateKey(selectedDate);
+      
+      try {
+        const { error } = await db.deleteCalendarNote(user.id, dateKey);
+        
+        if (error) {
+          console.error('Error deleting note:', error);
+          toast({
+            title: "Error deleting note ❌",
+            description: "Failed to delete note. Please try again.",
+            variant: "destructive",
+          });
+          return;
+        }
+
+        // Update local state
+        setCalendarNotes(prev => {
+          const newNotes = { ...prev };
+          delete newNotes[dateKey];
+          return newNotes;
+        });
+        setNoteText("");
+        
+        toast({
+          title: "Note deleted 🗑️",
+          description: `Note removed from ${selectedDate.toLocaleDateString()}`,
+        });
+      } catch (error) {
+        console.error('Error deleting note:', error);
+        toast({
+          title: "Error deleting note ❌",
+          description: "Failed to delete note. Please try again.",
+          variant: "destructive",
+        });
+      }
+    }
+  };
+
+  // Sample live stream data
+  const liveStreams = [
+    {
+      date: new Date(2024, 11, 15), // Dec 15, 2024
+      title: "AI Prompting Masterclass",
+      description: "Interactive Q&A and live prompting session",
+      time: "3:00 PM EST",
+      type: "live",
+      emoji: "🎥",
+      color: "red"
+    },
+    {
+      date: new Date(2024, 11, 22), // Dec 22, 2024
+      title: "Cursor Deep Dive",
+      description: "Advanced coding techniques with AI assistance", 
+      time: "2:00 PM EST",
+      type: "scheduled",
+      emoji: "🤖",
+      color: "blue"
+    },
+    {
+      date: new Date(2024, 11, 29), // Dec 29, 2024
+      title: "AI Tools Showcase",
+      description: "Latest AI tools and automation workflows",
+      time: "4:00 PM EST", 
+      type: "scheduled",
+      emoji: "💡",
+      color: "green"
+    }
+  ];
+
+  const hasStreamOnDate = (day: number) => {
+    return liveStreams.some(stream => 
+      stream.date.getFullYear() === currentDate.getFullYear() &&
+      stream.date.getMonth() === currentDate.getMonth() &&
+      stream.date.getDate() === day
+    );
+  };
+
+  const hasNoteOnDate = (day: number) => {
+    const date = new Date(currentDate.getFullYear(), currentDate.getMonth(), day);
+    const dateKey = formatDateKey(date);
+    return !!calendarNotes[dateKey];
+  };
 
   const stats = [
     { label: "Courses Completed", value: 0, emoji: "📚", color: "text-black" },
@@ -274,46 +546,56 @@ const Dashboard = () => {
         {/* Main Content Tabs */}
         <Tabs value={selectedTab} onValueChange={setSelectedTab}>
           <div className="flex justify-center mb-8">
-            <div className="bg-white shadow-lg p-1 rounded-full min-w-[520px] grid grid-cols-4 gap-1">
+            <div className="bg-white shadow-lg p-1 rounded-full min-w-[650px] grid grid-cols-5 gap-1">
               <button
                 onClick={() => setSelectedTab("overview")}
-                className={`px-8 py-3 rounded-full font-medium transition-all duration-200 ${
+                className={`px-6 py-3 rounded-full font-medium transition-all duration-200 ${
                   selectedTab === "overview"
                     ? "bg-black text-white"
                     : "text-gray-600 hover:text-black hover:bg-gray-50"
                 }`}
               >
-                Overview
+                📊 Overview
               </button>
               <button
                 onClick={() => setSelectedTab("courses")}
-                className={`px-8 py-3 rounded-full font-medium transition-all duration-200 ${
+                className={`px-6 py-3 rounded-full font-medium transition-all duration-200 ${
                   selectedTab === "courses"
                     ? "bg-black text-white"
                     : "text-gray-600 hover:text-black hover:bg-gray-50"
                 }`}
               >
-                Courses
+                📚 Courses
               </button>
               <button
                 onClick={() => setSelectedTab("tools")}
-                className={`px-8 py-3 rounded-full font-medium transition-all duration-200 ${
+                className={`px-6 py-3 rounded-full font-medium transition-all duration-200 ${
                   selectedTab === "tools"
                     ? "bg-black text-white"
                     : "text-gray-600 hover:text-black hover:bg-gray-50"
                 }`}
               >
-                AI Tools
+                🤖 AI Tools
               </button>
               <button
                 onClick={() => setSelectedTab("progress")}
-                className={`px-8 py-3 rounded-full font-medium transition-all duration-200 ${
+                className={`px-6 py-3 rounded-full font-medium transition-all duration-200 ${
                   selectedTab === "progress"
                     ? "bg-black text-white"
                     : "text-gray-600 hover:text-black hover:bg-gray-50"
                 }`}
               >
-                Progress
+                📈 Progress
+              </button>
+              <button
+                onClick={() => setSelectedTab("calendar")}
+                className={`px-6 py-3 rounded-full font-medium transition-all duration-200 ${
+                  selectedTab === "calendar"
+                    ? "bg-black text-white"
+                    : "text-gray-600 hover:text-black hover:bg-gray-50"
+                }`}
+              >
+                📅 Calendar
               </button>
             </div>
           </div>
@@ -456,7 +738,10 @@ const Dashboard = () => {
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: index * 0.1 }}
                   >
-                    <Card className={`border-0 bg-white rounded-2xl shadow-lg ${!tool.unlocked ? 'opacity-60' : ''}`}>
+                    <Card 
+                      className={`border-0 bg-white rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300 hover:-translate-y-1 cursor-pointer ${!tool.unlocked ? 'opacity-60' : ''}`}
+                      onClick={() => tool.unlocked && window.open(tool.url, '_blank')}
+                    >
                       <CardHeader className="pb-4">
                         <div className="flex items-center justify-between mb-3">
                           <Badge variant="outline" className="border-black/20 text-black rounded-full">{tool.category}</Badge>
@@ -466,7 +751,7 @@ const Dashboard = () => {
                           </div>
                         </div>
                         <CardTitle className="flex items-center text-black text-xl">
-                          <Wrench className="h-6 w-6 mr-3" />
+                          <span className="text-2xl mr-3">{tool.emoji}</span>
                           {tool.name}
                         </CardTitle>
                         <CardDescription className="text-gray-600">{tool.description}</CardDescription>
@@ -483,8 +768,9 @@ const Dashboard = () => {
                             disabled={!tool.unlocked}
                             variant={tool.unlocked ? "default" : "outline"}
                             className={tool.unlocked ? "bg-black text-white hover:bg-gray-800 rounded-full" : "border-gray-300 text-gray-600 rounded-full"}
+                            onClick={() => tool.unlocked && window.open(tool.url, '_blank')}
                           >
-                            {tool.unlocked ? 'Download' : 'Unlock'}
+                            {tool.unlocked ? 'Visit Tool' : 'Unlock'}
                           </Button>
                         </div>
                       </CardContent>
@@ -561,6 +847,356 @@ const Dashboard = () => {
                 </CardContent>
               </Card>
             </div>
+          </TabsContent>
+
+          {/* Calendar Tab */}
+          <TabsContent value="calendar" className="space-y-6">
+            <div className="grid lg:grid-cols-3 gap-6">
+              {/* Calendar View */}
+              <div className="lg:col-span-2">
+                <Card className="border-0 bg-white rounded-2xl shadow-lg">
+                  <CardHeader className="pb-4">
+                    <CardTitle className="flex items-center text-black text-xl">
+                      📅 Interactive Calendar
+                    </CardTitle>
+                    <CardDescription className="text-gray-600">
+                      View live streams, add notes, and manage your schedule
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {/* Calendar Header */}
+                    <div className="flex items-center justify-between mb-6">
+                      <h2 className="text-2xl font-bold text-black">
+                        {currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                      </h2>
+                      <div className="flex items-center space-x-2">
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          className="rounded-full border-black/20 hover:bg-gray-50"
+                          onClick={() => navigateMonth('prev')}
+                        >
+                          ← Prev
+                        </Button>
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          className="rounded-full border-black/20 hover:bg-gray-50"
+                          onClick={() => navigateMonth('next')}
+                        >
+                          Next →
+                        </Button>
+                      </div>
+                    </div>
+
+                    {/* Calendar Grid */}
+                    <div className="grid grid-cols-7 gap-2 mb-4">
+                      {/* Day Headers */}
+                      {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
+                        <div key={day} className="p-3 text-center text-sm font-medium text-gray-600">
+                          {day}
+                        </div>
+                      ))}
+
+                      {/* Calendar Days */}
+                      {(() => {
+                        const daysInMonth = getDaysInMonth(currentDate);
+                        const firstDay = getFirstDayOfMonth(currentDate);
+                        const totalCells = 42; // 6 weeks * 7 days
+                        const today = new Date();
+                        
+                        return Array.from({ length: totalCells }, (_, i) => {
+                          const dayNumber = i - firstDay + 1;
+                          const isCurrentMonth = dayNumber > 0 && dayNumber <= daysInMonth;
+                          const isToday = isCurrentMonth && 
+                            dayNumber === today.getDate() && 
+                            currentDate.getMonth() === today.getMonth() && 
+                            currentDate.getFullYear() === today.getFullYear();
+                          const hasStream = isCurrentMonth && hasStreamOnDate(dayNumber);
+                          const hasNote = isCurrentMonth && hasNoteOnDate(dayNumber);
+                          const isSelected = selectedDate && isCurrentMonth &&
+                            dayNumber === selectedDate.getDate() &&
+                            currentDate.getMonth() === selectedDate.getMonth() &&
+                            currentDate.getFullYear() === selectedDate.getFullYear();
+                          
+                          return (
+                            <div 
+                              key={i} 
+                              className={`relative p-3 text-center text-sm rounded-xl border transition-all cursor-pointer ${
+                                !isCurrentMonth 
+                                  ? 'text-gray-300 border-transparent cursor-default' 
+                                  : isSelected
+                                    ? 'bg-blue-500 text-white border-blue-500 ring-2 ring-blue-200'
+                                    : isToday 
+                                      ? 'bg-black text-white border-black' 
+                                      : hasStream 
+                                        ? 'bg-red-50 border-red-200 text-black hover:bg-red-100' 
+                                        : hasNote
+                                          ? 'bg-green-50 border-green-200 text-black hover:bg-green-100'
+                                          : 'border-gray-100 hover:border-gray-300 hover:bg-gray-50'
+                              }`}
+                              onClick={() => isCurrentMonth && selectDate(dayNumber)}
+                            >
+                              {isCurrentMonth && dayNumber}
+                              {/* Stream indicator */}
+                              {hasStream && isCurrentMonth && (
+                                <div className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full"></div>
+                              )}
+                              {/* Note indicator */}
+                              {hasNote && isCurrentMonth && !hasStream && (
+                                <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full"></div>
+                              )}
+                            </div>
+                          );
+                        });
+                      })()}
+                    </div>
+
+                    {/* Legend */}
+                    <div className="flex flex-wrap gap-4 text-xs text-gray-600 justify-center">
+                      <div className="flex items-center space-x-2">
+                        <div className="w-3 h-3 bg-black rounded-full"></div>
+                        <span>Today</span>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <div className="w-3 h-3 bg-red-500 rounded-full"></div>
+                        <span>Live Stream</span>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                        <span>Has Note</span>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
+                        <span>Selected</span>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Selected Date Details */}
+              <Card className="border-0 bg-white rounded-2xl shadow-lg">
+                <CardHeader className="pb-4">
+                  <CardTitle className="flex items-center text-black text-xl">
+                    📝 Date Details
+                  </CardTitle>
+                  <CardDescription className="text-gray-600">
+                    {selectedDate 
+                      ? `Selected: ${selectedDate.toLocaleDateString('en-US', { 
+                          weekday: 'long', 
+                          year: 'numeric', 
+                          month: 'long', 
+                          day: 'numeric' 
+                        })}`
+                      : 'Select a date to view details'
+                    }
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {selectedDate ? (
+                    <>
+                      {/* Stream on selected date */}
+                      {(() => {
+                        const streamOnDate = liveStreams.find(stream => 
+                          stream.date.getDate() === selectedDate.getDate() &&
+                          stream.date.getMonth() === selectedDate.getMonth() &&
+                          stream.date.getFullYear() === selectedDate.getFullYear()
+                        );
+                        
+                        if (streamOnDate) {
+                          return (
+                            <div className="p-4 bg-red-50 border border-red-200 rounded-2xl">
+                              <div className="flex items-center space-x-3 mb-2">
+                                <span className="text-2xl">{streamOnDate.emoji}</span>
+                                <div>
+                                  <h4 className="font-semibold text-black">{streamOnDate.title}</h4>
+                                  <p className="text-gray-600 text-sm">{streamOnDate.time}</p>
+                                </div>
+                              </div>
+                              <p className="text-gray-700 text-sm">{streamOnDate.description}</p>
+                              <Button size="sm" className="bg-black text-white hover:bg-gray-800 rounded-full mt-3">
+                                {streamOnDate.type === 'live' ? 'Join Stream' : 'Set Reminder'}
+                              </Button>
+                            </div>
+                          );
+                        }
+                        return null;
+                      })()}
+
+                      {/* Notes Section */}
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <h4 className="font-semibold text-black">📝 Notes</h4>
+                          {!isAddingNote && !notesLoading && (
+                            <Button 
+                              size="sm" 
+                              variant="outline" 
+                              className="border-black/20 text-black hover:bg-gray-50 rounded-full"
+                              onClick={() => setIsAddingNote(true)}
+                            >
+                              {calendarNotes[formatDateKey(selectedDate)] ? 'Edit Note' : 'Add Note'}
+                            </Button>
+                          )}
+                        </div>
+
+                        {isAddingNote ? (
+                          <div className="space-y-3">
+                            <textarea
+                              value={noteText}
+                              onChange={(e) => setNoteText(e.target.value)}
+                              placeholder="Add your note for this date..."
+                              className="w-full p-3 border border-gray-200 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-black/20"
+                              rows={4}
+                            />
+                            <div className="flex space-x-2">
+                              <Button 
+                                size="sm" 
+                                className="bg-black text-white hover:bg-gray-800 rounded-full"
+                                onClick={saveNote}
+                                disabled={savingNote || !noteText.trim()}
+                              >
+                                {savingNote ? 'Saving...' : 'Save Note'}
+                              </Button>
+                              <Button 
+                                size="sm" 
+                                variant="outline" 
+                                className="border-gray-300 text-gray-600 hover:bg-gray-50 rounded-full"
+                                onClick={() => {
+                                  setIsAddingNote(false);
+                                  setNoteText(calendarNotes[formatDateKey(selectedDate)] || "");
+                                }}
+                                disabled={savingNote}
+                              >
+                                Cancel
+                              </Button>
+                            </div>
+                          </div>
+                        ) : notesLoading ? (
+                          <div className="flex items-center justify-center py-4">
+                            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-black"></div>
+                            <span className="ml-2 text-gray-600">Loading notes...</span>
+                          </div>
+                        ) : (
+                          <div>
+                            {calendarNotes[formatDateKey(selectedDate)] ? (
+                              <div className="p-3 bg-gray-50 rounded-xl">
+                                <p className="text-gray-700 whitespace-pre-wrap">
+                                  {calendarNotes[formatDateKey(selectedDate)]}
+                                </p>
+                                <Button 
+                                  size="sm" 
+                                  variant="outline" 
+                                  className="border-red-200 text-red-600 hover:bg-red-50 rounded-full mt-3"
+                                  onClick={deleteNote}
+                                >
+                                  Delete Note
+                                </Button>
+                              </div>
+                            ) : (
+                              <p className="text-gray-500 italic">No notes for this date.</p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="text-center py-8">
+                      <div className="text-6xl mb-4">📅</div>
+                      <h3 className="text-lg font-medium text-black mb-2">Select a Date</h3>
+                      <p className="text-gray-600">Click on any date to view details and add notes.</p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Upcoming Streams Section */}
+            <Card className="border-0 bg-white rounded-2xl shadow-lg">
+              <CardHeader className="pb-4">
+                <CardTitle className="flex items-center text-black text-xl">
+                  🔴 Upcoming Live Streams
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  {liveStreams.map((stream, index) => (
+                    <div key={index} className="p-4 border border-gray-100 rounded-2xl hover:bg-gray-50 transition-colors">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-4">
+                          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${
+                            stream.color === 'red' ? 'bg-red-100' : 
+                            stream.color === 'blue' ? 'bg-blue-100' : 
+                            'bg-green-100'
+                          }`}>
+                            <span className="text-2xl">{stream.emoji}</span>
+                          </div>
+                          <div>
+                            <h4 className="font-semibold text-black">{stream.title}</h4>
+                            <p className="text-gray-600 text-sm">{stream.description}</p>
+                            <p className="text-gray-500 text-xs">
+                              {stream.date.toLocaleDateString('en-US', { 
+                                month: 'short', 
+                                day: 'numeric', 
+                                year: 'numeric' 
+                              })} • {stream.time}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <Badge 
+                            variant="outline" 
+                            className={`rounded-full ${
+                              stream.color === 'red' ? 'border-red-200 text-red-600 bg-red-50' :
+                              stream.color === 'blue' ? 'border-blue-200 text-blue-600 bg-blue-50' :
+                              'border-green-200 text-green-600 bg-green-50'
+                            }`}
+                          >
+                            {stream.type === 'live' ? '🔴 Live' : '📅 Scheduled'}
+                          </Badge>
+                          <Button 
+                            size="sm" 
+                            className={stream.type === 'live' 
+                              ? "bg-black text-white hover:bg-gray-800 rounded-full"
+                              : "border-black/20 text-black hover:bg-gray-50 rounded-full"
+                            }
+                            variant={stream.type === 'live' ? 'default' : 'outline'}
+                            onClick={() => {
+                              toast({
+                                title: stream.type === 'live' ? "Joining stream... 🔴" : "Reminder set! ⏰",
+                                description: stream.type === 'live' 
+                                  ? `Opening ${stream.title}` 
+                                  : `You'll be notified before ${stream.title}`,
+                              });
+                            }}
+                          >
+                            {stream.type === 'live' ? 'Join Stream' : 'Set Reminder'}
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Stream Statistics */}
+                <div className="mt-8 p-6 bg-gray-50 rounded-2xl">
+                  <div className="grid grid-cols-3 gap-6 text-center">
+                    <div>
+                      <div className="text-2xl font-bold text-black">{liveStreams.length}</div>
+                      <div className="text-sm text-gray-600">🎥 Total Streams</div>
+                    </div>
+                    <div>
+                      <div className="text-2xl font-bold text-black">847</div>
+                      <div className="text-sm text-gray-600">👥 Average Viewers</div>
+                    </div>
+                    <div>
+                      <div className="text-2xl font-bold text-black">4.9</div>
+                      <div className="text-sm text-gray-600">⭐ Stream Rating</div>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
           </TabsContent>
         </Tabs>
       </div>

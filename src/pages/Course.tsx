@@ -819,7 +819,7 @@ const Course = () => {
       {/* Module Viewer */}
       {viewingModule && currentModule && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl w-full max-w-6xl h-[90vh] flex flex-col overflow-hidden">
+          <div className="bg-white rounded-2xl w-full max-w-6xl h-[95vh] flex flex-col overflow-hidden">
             {/* Header */}
             <div className="p-6 border-b border-gray-200 flex items-center justify-between">
               <div>
@@ -841,13 +841,28 @@ const Course = () => {
             <div className="flex-1 flex overflow-hidden">
               {/* Video/Content Area */}
               <div className="flex-1 flex flex-col p-6">
-                {/* Video Player Placeholder */}
-                <div className="aspect-video bg-black rounded-xl flex items-center justify-center mb-6">
-                  <div className="text-center text-white">
+                {/* Video Player */}
+                <div className="aspect-video bg-black rounded-xl overflow-hidden mb-6">
+                  {currentModule.order_number === 1 ? (
+                    // First module - Tella.tv video
+                    <iframe 
+                      className="w-full h-full border-0" 
+                      src="https://www.tella.tv/video/cmchrxj3100050blh97xze2s2/embed?b=0&title=0&a=1&loop=0&t=0&muted=0&wt=0" 
+                      allowFullScreen 
+                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                      title="Module 1: Introduction to AI Prompting"
+                      loading="lazy"
+                    />
+                  ) : (
+                    // Placeholder for other modules
+                    <div className="w-full h-full flex items-center justify-center text-center text-white">
+                      <div>
                     <div className="text-8xl mb-4">▶️</div>
-                    <h3 className="text-2xl font-bold mb-2">Video Player</h3>
-                    <p className="text-gray-300">Module content would be played here</p>
+                        <h3 className="text-2xl font-bold mb-2">Video Coming Soon</h3>
+                        <p className="text-gray-300">Module {currentModule.order_number} content will be available soon</p>
                   </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Module Description */}
@@ -868,7 +883,7 @@ const Course = () => {
               </div>
 
               {/* Sidebar */}
-              <div className="w-80 border-l border-gray-200 p-6 bg-gray-50">
+              <div className="w-80 border-l border-gray-200 p-6 bg-gray-50 flex flex-col">
                 {/* Navigation */}
                 <div className="mb-6">
                   <h3 className="text-lg font-semibold text-black mb-4">Navigation</h3>
@@ -893,7 +908,7 @@ const Course = () => {
                 </div>
 
                 {/* Progress */}
-                <div className="mb-6">
+                <div className="mb-6 flex-1">
                   <h3 className="text-lg font-semibold text-black mb-4">Progress</h3>
                   <div className="space-y-3">
                     {modules.map((module, index) => {
@@ -952,7 +967,7 @@ const Course = () => {
                 </div>
 
                 {/* Completion Action */}
-                <div className="mb-6">
+                <div className="mb-4">
                   <h3 className="text-lg font-semibold text-black mb-4">Module Status</h3>
                   <Button 
                     onClick={() => {
@@ -970,6 +985,7 @@ const Course = () => {
                 </div>
 
                 {/* Back to Course */}
+                <div className="mt-auto">
                 <Button 
                   onClick={closeModule}
                   variant="outline"
@@ -977,6 +993,7 @@ const Course = () => {
                 >
                   ← Back to Course
                 </Button>
+                </div>
               </div>
             </div>
           </div>
