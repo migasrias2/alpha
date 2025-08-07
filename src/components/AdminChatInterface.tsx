@@ -375,26 +375,29 @@ export const AdminChatInterface: React.FC<AdminChatInterfaceProps> = ({ classNam
   }
 
   return (
-    <Card className={`border-0 bg-white rounded-2xl shadow-lg h-[600px] ${className}`}>
-      <div className="flex h-full">
+    <Card className={`border border-gray-200/50 bg-white rounded-3xl shadow-xl h-[600px] ${className} backdrop-blur-sm`}>
+      <div className="flex h-full overflow-hidden rounded-3xl">
         {/* Sidebar - Mentee List */}
-        <div className={`${sidebarOpen ? 'w-80' : 'w-0'} transition-all duration-300 overflow-hidden border-r border-gray-100`}>
-          <div className="p-4 border-b border-gray-100">
+        <div className={`${sidebarOpen ? 'w-80' : 'w-0'} transition-all duration-300 overflow-hidden border-r border-gray-200/50 bg-gray-50/30`}>
+          <div className="p-6 border-b border-gray-200/50 bg-white/50 backdrop-blur-sm">
             <div className="flex items-center justify-between">
-              <h3 className="font-semibold text-black">Conversations</h3>
+              <div>
+                <h3 className="font-semibold text-gray-900 text-lg">Messages</h3>
+                <p className="text-xs text-gray-500 mt-1">Active conversations</p>
+              </div>
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={() => setSidebarOpen(false)}
-                className="lg:hidden"
+                className="lg:hidden hover:bg-gray-100 rounded-full p-2"
               >
-                <X className="h-4 w-4" />
+                <X className="h-4 w-4 text-gray-500" />
               </Button>
             </div>
           </div>
           
-          <ScrollArea className="h-[calc(100%-64px)]">
-            <div className="p-2">
+          <ScrollArea className="h-[calc(100%-80px)]">
+            <div className="p-4">
               {conversations.length === 0 ? (
                 <div className="text-center py-8">
                   <MessageCircle className="h-8 w-8 text-gray-300 mx-auto mb-2" />
@@ -402,56 +405,65 @@ export const AdminChatInterface: React.FC<AdminChatInterfaceProps> = ({ classNam
                 </div>
               ) : (
                 conversations.map((conversation) => (
-                  <div
+                  <motion.div
                     key={conversation.mentee_id}
                     onClick={() => {
                       setSelectedMenteeId(conversation.mentee_id);
                       setSidebarOpen(false); // Close sidebar on mobile after selection
                       markConversationAsRead(conversation.mentee_id); // Mark as read when selected
                     }}
-                    className={`p-3 rounded-xl cursor-pointer transition-all duration-200 mb-2 ${
+                    className={`relative p-4 rounded-2xl cursor-pointer transition-all duration-300 mb-3 border ${
                       selectedMenteeId === conversation.mentee_id
-                        ? 'bg-black text-white'
-                        : 'hover:bg-gray-50'
+                        ? 'bg-gray-900 text-white border-gray-800 shadow-lg'
+                        : 'bg-white border-gray-200/60 hover:border-gray-300 hover:shadow-sm'
                     }`}
+                    whileHover={{ scale: selectedMenteeId === conversation.mentee_id ? 1 : 1.02 }}
+                    whileTap={{ scale: 0.98 }}
                   >
-                    <div className="flex items-start space-x-3">
-                      <Avatar className="w-10 h-10 flex-shrink-0">
-                        <AvatarFallback className="bg-gray-200 text-xs">
-                          {conversation.mentee_name[0]?.toUpperCase()}
-                        </AvatarFallback>
-                      </Avatar>
+                    <div className="flex items-center space-x-3">
+                      <div className="relative">
+                        <Avatar className="w-12 h-12 flex-shrink-0">
+                          <AvatarFallback className={`font-medium ${
+                            selectedMenteeId === conversation.mentee_id
+                              ? 'bg-gray-700 text-white'
+                              : 'bg-gray-100 text-gray-700'
+                          }`}>
+                            {conversation.mentee_name[0]?.toUpperCase()}
+                          </AvatarFallback>
+                        </Avatar>
+                        {conversation.unread_count > 0 && (
+                          <div className="absolute -top-1 -right-1">
+                            <Badge className="bg-blue-500 text-white text-xs rounded-full min-w-[22px] h-6 flex items-center justify-center p-0 border-2 border-white font-medium">
+                              {conversation.unread_count > 9 ? '9+' : conversation.unread_count}
+                            </Badge>
+                          </div>
+                        )}
+                      </div>
                       
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between mb-1">
-                          <p className={`font-medium text-sm truncate ${
-                            selectedMenteeId === conversation.mentee_id ? 'text-white' : 'text-black'
+                          <p className={`font-semibold text-sm truncate ${
+                            selectedMenteeId === conversation.mentee_id ? 'text-white' : 'text-gray-900'
                           }`}>
                             {conversation.mentee_name}
                           </p>
-                          {conversation.unread_count > 0 && (
-                            <Badge className="bg-blue-500 text-white text-xs rounded-full min-w-[20px] h-5 flex items-center justify-center p-1">
-                              {conversation.unread_count}
-                            </Badge>
+                          {conversation.last_message_time && (
+                            <p className={`text-xs font-medium ${
+                              selectedMenteeId === conversation.mentee_id ? 'text-gray-300' : 'text-gray-500'
+                            }`}>
+                              {formatDistanceToNow(new Date(conversation.last_message_time), { addSuffix: true })}
+                            </p>
                           )}
                         </div>
                         
-                        <p className={`text-xs truncate ${
-                          selectedMenteeId === conversation.mentee_id ? 'text-gray-200' : 'text-gray-600'
+                        <p className={`text-sm truncate leading-relaxed ${
+                          selectedMenteeId === conversation.mentee_id ? 'text-gray-300' : 'text-gray-600'
                         }`}>
                           {conversation.last_message}
                         </p>
-                        
-                        {conversation.last_message_time && (
-                          <p className={`text-xs mt-1 ${
-                            selectedMenteeId === conversation.mentee_id ? 'text-gray-300' : 'text-gray-500'
-                          }`}>
-                            {formatDistanceToNow(new Date(conversation.last_message_time), { addSuffix: true })}
-                          </p>
-                        )}
                       </div>
                     </div>
-                  </div>
+                  </motion.div>
                 ))
               )}
             </div>
@@ -461,32 +473,41 @@ export const AdminChatInterface: React.FC<AdminChatInterfaceProps> = ({ classNam
         {/* Main Chat Area */}
         <div className="flex-1 flex flex-col">
           {/* Chat Header */}
-          <div className="p-4 border-b border-gray-100 flex items-center justify-between">
-            <div className="flex items-center space-x-3">
+          <div className="p-6 border-b border-gray-200/50 bg-white/50 backdrop-blur-sm flex items-center justify-between">
+            <div className="flex items-center space-x-4">
               {!sidebarOpen && (
                 <Button
                   variant="ghost"
                   size="sm"
                   onClick={() => setSidebarOpen(true)}
+                  className="hover:bg-gray-100 rounded-full p-2"
                 >
-                  <Menu className="h-4 w-4" />
+                  <Menu className="h-4 w-4 text-gray-600" />
                 </Button>
               )}
               
               {selectedConversation ? (
                 <>
-                  <Avatar className="w-8 h-8">
-                    <AvatarFallback className="bg-gray-200 text-xs">
+                  <Avatar className="w-10 h-10">
+                    <AvatarFallback className="bg-gray-100 text-gray-700 font-medium">
                       {selectedConversation.mentee_name[0]?.toUpperCase()}
                     </AvatarFallback>
                   </Avatar>
                   <div>
-                    <h4 className="font-semibold text-black">Chat with {selectedConversation.mentee_name}</h4>
+                    <h4 className="font-semibold text-gray-900 text-lg">{selectedConversation.mentee_name}</h4>
                     <p className="text-xs text-gray-500">{selectedConversation.mentee_email}</p>
                   </div>
                 </>
               ) : (
-                <h4 className="font-semibold text-black">Select a conversation</h4>
+                <div className="flex items-center space-x-3">
+                  <div className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center">
+                    <MessageCircle className="h-5 w-5 text-gray-400" />
+                  </div>
+                  <div>
+                    <h4 className="font-semibold text-gray-900 text-lg">Select a conversation</h4>
+                    <p className="text-xs text-gray-500">Choose a mentee to start chatting</p>
+                  </div>
+                </div>
               )}
             </div>
           </div>
@@ -570,11 +591,11 @@ export const AdminChatInterface: React.FC<AdminChatInterfaceProps> = ({ classNam
                                 {message.reply_to_id && (
                                   <div className={`mb-2 p-2 rounded border-l-4 ${
                                     isFromMentor 
-                                      ? 'bg-gray-800 border-gray-400' 
+                                      ? 'bg-white border-gray-400' 
                                       : 'bg-white border-black'
                                   }`}>
                                     <p className={`text-xs opacity-70 ${
-                                      isFromMentor ? 'text-gray-300' : 'text-gray-600'
+                                      isFromMentor ? 'text-gray-600' : 'text-gray-600'
                                     }`}>
                                       {/* Find and display the original message */}
                                       {selectedConversation.messages.find(m => m.id === message.reply_to_id)?.message_text || 'Original message'}
@@ -633,7 +654,7 @@ export const AdminChatInterface: React.FC<AdminChatInterfaceProps> = ({ classNam
               </ScrollArea>
 
               {/* Message Input */}
-              <div className="border-t border-gray-100 p-4">
+              <div className="border-t border-gray-200/50 bg-white/50 backdrop-blur-sm p-6">
                 {/* Reply Preview with Jump-to-Message */}
                 {replyingTo && (
                   <motion.div
@@ -641,7 +662,7 @@ export const AdminChatInterface: React.FC<AdminChatInterfaceProps> = ({ classNam
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: 20, scale: 0.95 }}
                     transition={{ duration: 0.2, ease: "easeOut" }}
-                    className="mb-3 p-3 bg-gray-50 rounded-lg border-l-4 border-black shadow-sm"
+                    className="mb-4 p-4 bg-gray-50/50 rounded-2xl border border-gray-200/50 shadow-sm backdrop-blur-sm"
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
@@ -686,7 +707,7 @@ export const AdminChatInterface: React.FC<AdminChatInterfaceProps> = ({ classNam
                   </motion.div>
                 )}
                 
-                <form onSubmit={handleSendMessage} className="flex space-x-3">
+                <form onSubmit={handleSendMessage} className="flex items-center space-x-4">
                   <Input
                     value={newMessage}
                     onChange={(e) => setNewMessage(e.target.value)}
@@ -695,13 +716,13 @@ export const AdminChatInterface: React.FC<AdminChatInterfaceProps> = ({ classNam
                         ? `Reply to ${selectedConversation.mentee_name}...`
                         : `Message ${selectedConversation.mentee_name}...`
                     }
-                    className="flex-1 rounded-full border-gray-200 focus:border-black focus:ring-1 focus:ring-black"
+                    className="flex-1 rounded-2xl border-gray-200/50 bg-gray-50/50 focus:border-gray-300 focus:ring-2 focus:ring-gray-200/50 py-3 px-4 backdrop-blur-sm"
                     disabled={sending}
                   />
                   <Button 
                     type="submit" 
                     size="sm" 
-                    className="bg-black text-white hover:bg-gray-800 rounded-full px-6"
+                    className="bg-gray-900 text-white hover:bg-gray-800 rounded-2xl px-6 py-3 font-medium transition-all duration-200 shadow-sm"
                     disabled={!newMessage.trim() || sending}
                   >
                     <Send className="h-4 w-4" />
