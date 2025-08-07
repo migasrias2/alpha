@@ -25,6 +25,8 @@ interface CourseData {
 interface ModuleProgress {
   completed: boolean;
   completed_at: string | null;
+  homework_submission?: string | null;
+  homework_submitted_at?: string | null;
 }
 
 interface ModuleData {
@@ -52,6 +54,8 @@ const Course = () => {
   const [progress, setProgress] = useState(0);
   const [currentModule, setCurrentModule] = useState<ModuleData | null>(null);
   const [viewingModule, setViewingModule] = useState(false);
+  const [homeworkText, setHomeworkText] = useState('');
+  const [submittingHomework, setSubmittingHomework] = useState(false);
 
   const toggleModule = (moduleId: string) => {
     const newExpanded = new Set(expandedModules);
@@ -231,40 +235,177 @@ const Course = () => {
     }
   };
 
+  // Submit homework for current module
+  const submitHomework = async (moduleId: string, homeworkText: string) => {
+    if (!user || !homeworkText.trim()) {
+      toast({
+        title: "Error",
+        description: "Please enter your homework submission.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setSubmittingHomework(true);
+    try {
+      const { supabase } = await import('@/lib/supabase');
+      
+      // Submit homework
+      const result = await db.submitHomework(user.id, moduleId, homeworkText.trim());
+      
+      if (result.error) {
+        throw result.error;
+      }
+
+      // Update local state to reflect homework submission
+      const updatedModules = modules.map(module => {
+        if (module.id === moduleId) {
+          return {
+            ...module,
+            user_module_progress: [{
+              completed: module.user_module_progress?.[0]?.completed || false,
+              completed_at: module.user_module_progress?.[0]?.completed_at || null,
+              homework_submission: homeworkText.trim(),
+              homework_submitted_at: new Date().toISOString()
+            }]
+          };
+        }
+        return module;
+      });
+
+      setModules(updatedModules);
+
+      // Update current module if it's the one being updated
+      if (currentModule && currentModule.id === moduleId) {
+        setCurrentModule(prev => ({
+          ...prev,
+          user_module_progress: [{
+            completed: prev.user_module_progress?.[0]?.completed || false,
+            completed_at: prev.user_module_progress?.[0]?.completed_at || null,
+            homework_submission: homeworkText.trim(),
+            homework_submitted_at: new Date().toISOString()
+          }]
+        }));
+      }
+
+      // Clear the homework text
+      setHomeworkText('');
+
+      toast({
+        title: "Homework Submitted! 🎉",
+        description: "Your assignment has been saved. You can now complete the module.",
+      });
+    } catch (error) {
+      console.error('Error submitting homework:', error);
+      toast({
+        title: "Error",
+        description: "Failed to submit homework. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setSubmittingHomework(false);
+    }
+  };
+
   // Start/Open module
   const openModule = (module: ModuleData) => {
     setCurrentModule(module);
     setViewingModule(true);
+    // Load existing homework if any
+    setHomeworkText(module.user_module_progress?.[0]?.homework_submission || '');
   };
 
   // Close module viewer
-  const closeModule = () => {
+  const closeModule = async () => {
     setViewingModule(false);
     setCurrentModule(null);
+    
+    // Reload course data to reflect any changes made in the module viewer
+    if (user) {
+      try {
+        const actualCourseId = 'fc67bc80-0ab4-4ef5-b0db-26e9daac2b09';
+        const courseResponse = await db.getCourseProgress(user.id, actualCourseId);
+        
+        if (courseResponse.course) {
+          setModules(courseResponse.modules || []);
+          
+          // Recalculate progress
+          const progressPercentage = await db.calculateCourseProgress(user.id, actualCourseId);
+          setProgress(progressPercentage);
+        }
+      } catch (error) {
+        console.error('Error reloading course data:', error);
+      }
+    }
   };
 
   // Navigate to next module
-  const nextModule = () => {
+    const nextModule = async () => {
     if (!currentModule) return;
     const currentIndex = modules.findIndex(m => m.id === currentModule.id);
+    const currentProgress = currentModule.user_module_progress?.[0];
     
-    // Find the next unlocked module (sequential unlock logic)
-    for (let i = currentIndex + 1; i < modules.length; i++) {
-      const nextMod = modules[i];
-      const isUnlocked = i === 0 || modules.slice(0, i).every(prevModule => prevModule.user_module_progress?.[0]?.completed);
-      
-      if (isUnlocked) {
-        setCurrentModule(nextMod);
+    // First check if current module homework is submitted
+    if (!currentProgress?.homework_submission) {
+      toast({
+        title: "Homework Required! 📚",
+        description: "You need to submit your homework before proceeding to the next module.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Then check if current module is completed
+    if (!currentProgress?.completed) {
+      toast({
+        title: "Complete Current Module! ✅",
+        description: "Please mark the current module as complete before proceeding.",
+        variant: "destructive",
+      });
         return;
       }
-    }
     
-    // If no unlocked module found, close the module viewer
-    closeModule();
+    // Check if there's a next module
+    if (currentIndex >= modules.length - 1) {
+      toast({
+        title: "Congratulations! 🎉",
+        description: "You've completed all available modules!",
+      });
+      return;
+    }
+
+    // Get the next module and refresh data to ensure it's unlocked
+    try {
+      if (user) {
+        const actualCourseId = 'fc67bc80-0ab4-4ef5-b0db-26e9daac2b09';
+        const courseResponse = await db.getCourseProgress(user.id, actualCourseId);
+        
+        if (courseResponse.course) {
+          const updatedModules = courseResponse.modules || [];
+          setModules(updatedModules);
+          
+          // Get the next module from updated data
+          const nextMod = updatedModules[currentIndex + 1];
+          if (nextMod) {
+            setCurrentModule(nextMod);
+            // Clear homework text for new module
+            setHomeworkText(nextMod.user_module_progress?.[0]?.homework_submission || '');
+            
     toast({
-      title: "Great progress! 🎉",
-      description: "Complete the previous modules to unlock the next one.",
+              title: "Module Unlocked! 🚀",
+              description: `Welcome to ${nextMod.title}`,
+            });
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error loading next module:', error);
+      toast({
+        title: "Error",
+        description: "Failed to load next module. Please try again.",
+        variant: "destructive",
     });
+    }
   };
 
   // Navigate to previous module
@@ -366,7 +507,7 @@ const Course = () => {
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <div className="relative z-20 sticky top-0 py-4">
-        <div className="container mx-auto px-6">
+        <div className="container mx-auto px-6 space-y-4">
           <div className="bg-white/80 backdrop-blur-xl rounded-2xl border border-white/20 shadow-lg px-6 py-4 flex items-center justify-between">
             <div className="flex items-center space-x-6">
               <div className="flex items-center space-x-2">
@@ -392,6 +533,18 @@ const Course = () => {
               </Avatar>
             </button>
           </div>
+          
+          {/* Progress Bar */}
+          <div className="bg-white/80 backdrop-blur-xl rounded-2xl border border-white/20 shadow-lg px-6 py-4">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-lg font-semibold text-black">Your Progress</span>
+              <span className="text-lg font-bold text-black">{progress}% complete</span>
+            </div>
+            <Progress value={progress} className="h-3 rounded-full mb-2 [&>div]:bg-black" />
+            <p className="text-gray-600 text-sm">
+              {modules.filter(m => m.user_module_progress?.[0]?.completed).length}/{modules.length} modules completed
+            </p>
+          </div>
         </div>
       </div>
 
@@ -403,9 +556,9 @@ const Course = () => {
           transition={{ duration: 0.6 }}
           className="mb-8"
         >
-          <div className="grid lg:grid-cols-3 gap-8">
+          <div className="grid lg:grid-cols-2 gap-8 items-start">
             {/* Course Info */}
-            <div className="lg:col-span-2">
+            <div>
               <div className="mb-6">
                 <Badge variant="outline" className="mb-4 border-black/20 text-black rounded-full">{course.category}</Badge>
                 <h1 className="text-5xl font-bold text-black mb-6">{course.title}</h1>
@@ -413,7 +566,7 @@ const Course = () => {
               </div>
 
               {/* Course Stats */}
-              <div className="flex flex-wrap gap-6 text-sm text-gray-600 mb-8">
+              <div className="flex flex-wrap gap-6 text-sm text-gray-600">
                 <div className="flex items-center space-x-2">
                   <span className="text-lg">👥</span>
                   <span className="font-medium">1,247 students</span>
@@ -432,43 +585,18 @@ const Course = () => {
                 </div>
                 <Badge variant="outline" className="border-black/20 text-black rounded-full">{course.difficulty}</Badge>
               </div>
-
-              {/* Progress */}
-              <Card className="border-0 bg-white rounded-2xl shadow-lg">
-                <CardContent className="p-8">
-                  <div className="flex items-center justify-between mb-4">
-                    <span className="text-lg font-semibold text-black">Your Progress</span>
-                    <span className="text-lg font-bold text-black">{progress}% complete</span>
-                  </div>
-                  <Progress value={progress} className="h-4 rounded-full mb-4 [&>div]:bg-black" />
-                  <p className="text-gray-600">
-                    {modules.filter(m => m.user_module_progress?.[0]?.completed).length}/{modules.length} modules completed
-                  </p>
-                </CardContent>
-              </Card>
             </div>
 
-            {/* Course Image */}
-            <Card className="border-0 bg-white rounded-2xl shadow-lg overflow-hidden">
-              <div className="aspect-[4/3] bg-gradient-to-br from-gray-100 to-gray-200 relative">
-                <img 
-                  src="/prompt.png" 
-                  alt="Prompting is Key Course" 
-                  className="w-full h-full object-cover"
-                  onError={(e) => {
-                    // Fallback to gradient background if image fails to load
-                    e.currentTarget.style.display = 'none';
-                  }}
-                />
-                <div className="absolute inset-0 bg-black/10"></div>
-                <div className="absolute bottom-6 left-6 right-6">
-                  <div className="bg-white/95 backdrop-blur-sm rounded-xl p-4">
-                    <h3 className="font-bold text-black mb-1">Master AI Prompting</h3>
-                    <p className="text-gray-700 text-sm">Transform your agency with proven AI workflows</p>
-                  </div>
-                </div>
-              </div>
-            </Card>
+            {/* Course Video Preview */}
+            <div className="aspect-[4/3] relative rounded-2xl overflow-hidden">
+              <iframe 
+                className="w-full h-full border-0 pointer-events-none rounded-2xl"
+                src="https://www.tella.tv/video/cmctjwj2s001e0ckzdu1u50ba/embed?b=0&title=0&a=0&loop=0&t=0&muted=1&wt=0&autoplay=0&controls=0" 
+                allowTransparency
+                title="Course Preview"
+                style={{ pointerEvents: 'none' }}
+              />
+            </div>
           </div>
         </motion.div>
 
@@ -552,8 +680,11 @@ const Course = () => {
                   const isExpanded = expandedModules.has(module.id);
                   const isCompleted = module.user_module_progress?.[0]?.completed || false;
                   
-                  // Sequential unlocking logic - ALL previous modules must be completed
-                  const isUnlocked = index === 0 || modules.slice(0, index).every(prevModule => prevModule.user_module_progress?.[0]?.completed);
+                  // Sequential unlocking logic - ALL previous modules must be completed AND have homework submitted
+                  const isUnlocked = index === 0 || modules.slice(0, index).every(prevModule => {
+                    const progress = prevModule.user_module_progress?.[0];
+                    return progress?.completed && progress?.homework_submission;
+                  });
                   const isLocked = !isUnlocked;
                   
                   // Demo lesson structure for each module
@@ -650,7 +781,14 @@ const Course = () => {
                             </div>
                             
                             <div className="bg-gray-50 rounded-xl p-4">
-                              <h4 className="font-semibold text-black mb-2">📝 Homework:</h4>
+                              <div className="flex items-center justify-between mb-2">
+                                <h4 className="font-semibold text-black">📝 Homework:</h4>
+                                {module.user_module_progress?.[0]?.homework_submission && (
+                                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-green-100 text-green-800">
+                                    ✅ Submitted
+                                  </span>
+                                )}
+                              </div>
                               <p className="text-gray-700">{module.homework}</p>
                             </div>
 
@@ -679,17 +817,26 @@ const Course = () => {
                                     e.stopPropagation();
                                     if (!isLocked) toggleModuleCompletion(module.id, isCompleted);
                                   }}
-                                  disabled={isLocked}
+                                  disabled={isLocked || (!module.user_module_progress?.[0]?.homework_submission && !isCompleted)}
                                   variant="outline"
                                   className={`rounded-full px-6 ${
                                     isLocked
+                                      ? 'border-gray-300 text-gray-500 cursor-not-allowed'
+                                      : (!module.user_module_progress?.[0]?.homework_submission && !isCompleted)
                                       ? 'border-gray-300 text-gray-500 cursor-not-allowed'
                                       : isCompleted 
                                         ? 'border-green-600 text-green-600 hover:bg-green-50' 
                                         : 'border-black text-black hover:bg-gray-50'
                                   }`}
                                 >
-                                  {isLocked ? '🔒 Locked' : isCompleted ? 'Uncomplete' : 'Mark Complete'}
+                                  {isLocked 
+                                    ? '🔒 Locked' 
+                                    : (!module.user_module_progress?.[0]?.homework_submission && !isCompleted)
+                                      ? '📝 Need Homework'
+                                      : isCompleted 
+                                        ? 'Uncomplete' 
+                                        : 'Mark Complete'
+                                  }
                                 </Button>
                               </div>
                             </div>
@@ -819,129 +966,224 @@ const Course = () => {
       {/* Module Viewer */}
       {viewingModule && currentModule && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl w-full max-w-6xl h-[95vh] flex flex-col overflow-hidden">
+          <div className="bg-white rounded-2xl w-full max-w-7xl h-[90vh] flex flex-col overflow-hidden">
             {/* Header */}
             <div className="p-6 border-b border-gray-200 flex items-center justify-between">
-              <div>
+              <div className="flex-1 min-w-0">
                 <h2 className="text-2xl font-bold text-black">
                   Module {currentModule.order_number}: {currentModule.title} {currentModule.emoji}
                 </h2>
                 <p className="text-gray-600 mt-1">{currentModule.subtitle}</p>
               </div>
+              
+              {/* Navigation Controls */}
+              <div className="flex items-center space-x-3 ml-6">
+                <Button 
+                  onClick={previousModule}
+                  disabled={modules.findIndex(m => m.id === currentModule.id) === 0}
+                  variant="outline"
+                  size="sm"
+                  className="rounded-full border-gray-200 hover:bg-gray-50 disabled:opacity-40"
+                >
+                  ← Prev
+                </Button>
+                <Button 
+                  onClick={nextModule}
+                  disabled={
+                    modules.findIndex(m => m.id === currentModule.id) === modules.length - 1 ||
+                    !currentModule.user_module_progress?.[0]?.homework_submission ||
+                    !currentModule.user_module_progress?.[0]?.completed
+                  }
+                  variant="outline"
+                  size="sm"
+                  className="rounded-full border-gray-200 hover:bg-gray-50 disabled:opacity-40"
+                >
+                  {!currentModule.user_module_progress?.[0]?.homework_submission 
+                    ? '📚 Homework'
+                    : !currentModule.user_module_progress?.[0]?.completed
+                      ? '✅ Complete'
+                      : modules.findIndex(m => m.id === currentModule.id) === modules.length - 1
+                        ? '🎉 Done'
+                        : 'Next →'
+                  }
+                </Button>
               <Button 
                 variant="ghost" 
                 onClick={closeModule}
-                className="rounded-full hover:bg-gray-100"
+                  className="rounded-full hover:bg-gray-100 ml-2"
               >
                 ✕
               </Button>
+              </div>
             </div>
 
             {/* Content */}
             <div className="flex-1 flex overflow-hidden">
               {/* Video/Content Area */}
-              <div className="flex-1 flex flex-col p-6">
+              <div className="flex-1 flex flex-col p-6 overflow-y-auto">
                 {/* Video Player */}
-                <div className="aspect-video bg-black rounded-xl overflow-hidden mb-6">
+                <div className="w-full max-w-3xl mx-auto mb-6">
+                  <div className="aspect-video bg-black rounded-xl overflow-hidden shadow-lg">
                   {currentModule.order_number === 1 ? (
                     // First module - Tella.tv video
                     <iframe 
                       className="w-full h-full border-0" 
-                      src="https://www.tella.tv/video/cmchrxj3100050blh97xze2s2/embed?b=0&title=0&a=1&loop=0&t=0&muted=0&wt=0" 
+                      src="https://www.tella.tv/video/cmctjwj2s001e0ckzdu1u50ba/embed?b=0&title=1&a=1&loop=0&t=0&muted=0&wt=0" 
                       allowFullScreen 
-                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                      allowTransparency
                       title="Module 1: Introduction to AI Prompting"
-                      loading="lazy"
                     />
                   ) : (
                     // Placeholder for other modules
                     <div className="w-full h-full flex items-center justify-center text-center text-white">
                       <div>
-                    <div className="text-8xl mb-4">▶️</div>
-                        <h3 className="text-2xl font-bold mb-2">Video Coming Soon</h3>
+                          <div className="text-6xl mb-4">▶️</div>
+                          <h3 className="text-xl font-bold mb-2">Video Coming Soon</h3>
                         <p className="text-gray-300">Module {currentModule.order_number} content will be available soon</p>
                   </div>
                     </div>
                   )}
+                  </div>
                 </div>
 
+                {/* Content Grid (Description & Homework) */}
+                <div className="w-full max-w-5xl mx-auto grid md:grid-cols-2 gap-6 items-start mb-6">
                 {/* Module Description */}
-                <div className="bg-gray-50 rounded-xl p-6 mb-6">
+                  <div className="bg-gray-50 rounded-xl p-6">
                   <h3 className="text-lg font-semibold text-black mb-3">About This Module</h3>
-                  <p className="text-gray-700 mb-4">{currentModule.subtitle}</p>
-                  <div className="flex items-center space-x-4 text-sm text-gray-600">
+                    <p className="text-gray-700 mb-4 leading-relaxed">{currentModule.subtitle}</p>
+                    <div className="flex items-center space-x-4 text-sm text-gray-600 mb-4">
                     <span>⏰ {currentModule.duration}</span>
                     <span>🎥 4 lessons</span>
+                  </div>
+                    
+                    {/* What You'll Learn Section */}
+                    <div>
+                      <h4 className="font-semibold text-black mb-3">What You'll Learn:</h4>
+                      <div className="space-y-2">
+                        <div className="flex items-start space-x-3">
+                          <div className="w-2 h-2 bg-black rounded-full mt-2 flex-shrink-0"></div>
+                          <p className="text-gray-700 text-sm">What is a "prompt" and why it matters</p>
+                        </div>
+                        <div className="flex items-start space-x-3">
+                          <div className="w-2 h-2 bg-black rounded-full mt-2 flex-shrink-0"></div>
+                          <p className="text-gray-700 text-sm">Anatomy of a great prompt</p>
+                        </div>
+                        <div className="flex items-start space-x-3">
+                          <div className="w-2 h-2 bg-black rounded-full mt-2 flex-shrink-0"></div>
+                          <p className="text-gray-700 text-sm">Output quality = Input quality</p>
+                        </div>
+                        <div className="flex items-start space-x-3">
+                          <div className="w-2 h-2 bg-black rounded-full mt-2 flex-shrink-0"></div>
+                          <p className="text-gray-700 text-sm">Types of prompts and when to use them</p>
+                        </div>
+                      </div>
                   </div>
                 </div>
 
                 {/* Homework Section */}
                 <div className="bg-gray-50 rounded-xl p-6">
                   <h3 className="text-lg font-semibold text-black mb-3">📝 Module Assignment</h3>
-                  <p className="text-gray-700">{currentModule.homework}</p>
-                </div>
-              </div>
+                    <p className="text-gray-700 mb-4 leading-relaxed">{currentModule.homework}</p>
 
-              {/* Sidebar */}
-              <div className="w-80 border-l border-gray-200 p-6 bg-gray-50 flex flex-col">
-                {/* Navigation */}
-                <div className="mb-6">
-                  <h3 className="text-lg font-semibold text-black mb-4">Navigation</h3>
-                  <div className="space-y-3">
+                    {/* Assignment Submission */}
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          💡 Paste your 3 prompts here to mark complete
+                        </label>
+                        <textarea
+                          value={homeworkText}
+                          onChange={(e) => setHomeworkText(e.target.value)}
+                          className="w-full h-28 p-3 border border-gray-300 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent text-sm"
+                          placeholder={
+                            `Paste your 3 CTA prompt variations here...\n\nExample:\n1. Your first prompt variation\n2. Your second prompt variation\n3. Your third prompt variation`
+                          }
+                          disabled={submittingHomework}
+                        />
+                </div>
+
+                      {/* Show submission status */}
+                      {currentModule?.user_module_progress?.[0]?.homework_submission && (
+                        <div className="bg-green-50 border border-green-200 rounded-xl p-3">
+                          <div className="flex items-center space-x-2">
+                            <span className="text-green-600">✅</span>
+                            <span className="text-green-800 font-medium text-sm">Homework Submitted</span>
+                            <span className="text-green-600 text-xs">
+                              {new Date(currentModule.user_module_progress[0].homework_submitted_at || '').toLocaleDateString()}
+                            </span>
+              </div>
+                        </div>
+                      )}
+
+                      <div className="flex flex-col gap-2">
                     <Button 
-                      onClick={previousModule}
-                      disabled={modules.findIndex(m => m.id === currentModule.id) === 0}
-                      variant="outline"
-                      className="w-full rounded-full"
-                    >
-                      ← Previous Module
+                          className="w-full bg-black hover:bg-gray-800 text-white rounded-full disabled:bg-gray-400 text-sm py-2"
+                          onClick={() => currentModule && submitHomework(currentModule.id, homeworkText)}
+                          disabled={submittingHomework || !homeworkText.trim()}
+                        >
+                          {submittingHomework ? '🔄 Submitting...' : '📚 Submit Assignment'}
                     </Button>
                     <Button 
-                      onClick={nextModule}
-                      disabled={modules.findIndex(m => m.id === currentModule.id) === modules.length - 1}
                       variant="outline"
-                      className="w-full rounded-full"
-                    >
-                      Next Module →
+                          className="w-full border-gray-300 text-gray-700 hover:bg-gray-50 rounded-full disabled:opacity-50 text-sm py-2"
+                          onClick={() => {
+                            setHomeworkText('');
+                            toast({
+                              title: 'Draft Cleared',
+                              description: 'Your draft has been cleared.',
+                            });
+                          }}
+                          disabled={submittingHomework}
+                        >
+                          🗑️ Clear Draft
                     </Button>
+                      </div>
+                    </div>
+                  </div>
                   </div>
                 </div>
 
+              {/* Sidebar */}
+              <div className="w-80 border-l border-gray-200 bg-white flex flex-col">
                 {/* Progress */}
-                <div className="mb-6 flex-1">
+                <div className="flex-1 p-6">
                   <h3 className="text-lg font-semibold text-black mb-4">Progress</h3>
-                  <div className="space-y-3">
+                  <div className="space-y-2">
                     {modules.map((module, index) => {
                       const isCompleted = module.user_module_progress?.[0]?.completed || false;
                       const isCurrent = module.id === currentModule.id;
-                      const isUnlocked = index === 0 || modules.slice(0, index).every(prevModule => prevModule.user_module_progress?.[0]?.completed);
+                      const isUnlocked = index === 0 || modules.slice(0, index).every(prevModule => {
+                        const progress = prevModule.user_module_progress?.[0];
+                        return progress?.completed && progress?.homework_submission;
+                      });
                       const isLocked = !isUnlocked;
                       
                       return (
                         <div 
                           key={module.id} 
-                          className={`flex items-center space-x-3 p-3 rounded-xl transition-colors ${
+                          className={`flex items-center space-x-3 p-3 rounded-xl transition-all duration-200 ${
                             isLocked 
-                              ? 'opacity-50 cursor-not-allowed' 
+                              ? 'opacity-40 cursor-not-allowed' 
                               : isCurrent 
-                                ? 'bg-black text-white cursor-pointer' 
-                                : 'hover:bg-gray-100 cursor-pointer'
+                                ? 'bg-black text-white shadow-md' 
+                                : 'hover:bg-gray-50 cursor-pointer border border-transparent hover:border-gray-200'
                           }`}
                           onClick={() => !isLocked && setCurrentModule(module)}
                         >
-                          <div className={`w-8 h-8 rounded-full flex items-center justify-center text-lg ${
+                          <div className={`w-10 h-10 rounded-full flex items-center justify-center text-lg font-medium ${
                             isLocked 
-                              ? 'bg-gray-200 text-gray-400' 
+                              ? 'bg-gray-100 text-gray-400' 
                               : isCompleted 
                                 ? 'bg-green-100 text-green-600' 
                                 : isCurrent 
                                   ? 'bg-white/20 text-white' 
-                                  : 'bg-gray-200 text-gray-600'
+                                  : 'bg-gray-100 text-gray-600'
                           }`}>
                             {isLocked ? '🔒' : isCompleted ? '✅' : module.emoji}
                           </div>
-                          <div className="flex-1">
-                            <p className={`font-medium text-sm ${
+                          <div className="flex-1 min-w-0">
+                            <p className={`font-semibold text-sm ${
                               isLocked 
                                 ? 'text-gray-400' 
                                 : isCurrent 
@@ -950,12 +1192,12 @@ const Course = () => {
                             }`}>
                               Module {module.order_number}
                             </p>
-                            <p className={`text-xs ${
+                            <p className={`text-xs truncate ${
                               isLocked 
                                 ? 'text-gray-400' 
                                 : isCurrent 
                                   ? 'text-gray-300' 
-                                  : 'text-gray-600'
+                                  : 'text-gray-500'
                             }`}>
                               {isLocked ? 'Locked' : module.title}
                             </p>
@@ -966,30 +1208,37 @@ const Course = () => {
                   </div>
                 </div>
 
-                {/* Completion Action */}
-                <div className="mb-4">
-                  <h3 className="text-lg font-semibold text-black mb-4">Module Status</h3>
+                {/* Module Status & Actions */}
+                <div className="p-6 border-t border-gray-100 space-y-4">
+                  <div>
+                    <h3 className="text-lg font-semibold text-black mb-3">Module Status</h3>
                   <Button 
                     onClick={() => {
                       const isCompleted = currentModule.user_module_progress?.[0]?.completed || false;
                       toggleModuleCompletion(currentModule.id, isCompleted);
                     }}
-                    className={`w-full rounded-full ${
+                      disabled={!currentModule.user_module_progress?.[0]?.homework_submission && !currentModule.user_module_progress?.[0]?.completed}
+                      className={`w-full rounded-full py-3 font-medium ${
                       currentModule.user_module_progress?.[0]?.completed 
                         ? 'bg-green-600 hover:bg-green-700 text-white' 
-                        : 'bg-black hover:bg-gray-800 text-white'
+                          : currentModule.user_module_progress?.[0]?.homework_submission
+                            ? 'bg-black hover:bg-gray-800 text-white'
+                            : 'bg-gray-200 text-gray-500 cursor-not-allowed'
                     }`}
                   >
-                    {currentModule.user_module_progress?.[0]?.completed ? 'Mark Incomplete' : 'Mark Complete'}
+                      {currentModule.user_module_progress?.[0]?.completed 
+                        ? 'Mark Incomplete' 
+                        : currentModule.user_module_progress?.[0]?.homework_submission
+                          ? 'Mark Complete'
+                          : 'Submit Homework First'
+                      }
                   </Button>
                 </div>
 
-                {/* Back to Course */}
-                <div className="mt-auto">
                 <Button 
                   onClick={closeModule}
                   variant="outline"
-                  className="w-full rounded-full"
+                    className="w-full rounded-full border-gray-200 hover:bg-gray-50 py-3"
                 >
                   ← Back to Course
                 </Button>

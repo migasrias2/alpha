@@ -54,8 +54,14 @@ const Login = () => {
           description: "Time to continue mastering AI tools! 🚀",
         });
         
-        // Redirect to dashboard after successful login
-        navigate('/dashboard');
+        // Let the auth context handle the redirect based on admin status
+        // Don't redirect immediately to avoid timing issues
+        setTimeout(() => {
+          // Fallback redirect if nothing else happens
+          if (window.location.pathname === '/login') {
+            navigate('/dashboard');
+          }
+        }, 100);
       }
     } catch (error) {
       toast({

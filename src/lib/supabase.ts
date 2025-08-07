@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { Session, AuthChangeEvent } from '@supabase/supabase-js';
 
-// Real Supabase project credentials
+// Supabase project credentials
 const supabaseUrl = 'https://gmolljzhuzlhwbcjjyrd.supabase.co'
 const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdtb2xsanpodXpsaHdiY2pqeXJkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTExMjA0MzgsImV4cCI6MjA2NjY5NjQzOH0.VuyczDKczaMxv5fQqK2DDTvfRZ-V8uThP4p-TSKVJSM'
 
@@ -10,8 +10,6 @@ export const supabase = createClient(supabaseUrl, supabaseKey)
 interface UserMetadata {
   first_name?: string;
   last_name?: string;
-  company_name?: string;
-  company_size?: string;
 }
 
 interface ProfileData {
@@ -19,18 +17,14 @@ interface ProfileData {
   first_name?: string;
   last_name?: string;
   email?: string;
-  company_name?: string;
-  company_size?: string;
-  avatar_url?: string;
+  role?: 'user' | 'admin';
   created_at?: string;
 }
 
 interface ProfileUpdates {
   first_name?: string;
   last_name?: string;
-  company_name?: string;
-  company_size?: string;
-  avatar_url?: string;
+  role?: 'user' | 'admin';
 }
 
 // Helper functions for authentication
@@ -75,7 +69,7 @@ export const db = {
   getUserProfile: async (userId: string) => {
     return await supabase
       .from('profiles')
-      .select('*')
+      .select('id, email, first_name, last_name, role, created_at')
       .eq('id', userId)
       .single()
   },
@@ -85,7 +79,10 @@ export const db = {
       .from('profiles')
       .insert({
         id: userId,
-        ...profileData,
+        email: profileData.email,
+        first_name: profileData.first_name,
+        last_name: profileData.last_name,
+        role: profileData.role || 'user',
         created_at: new Date().toISOString()
       })
   },
@@ -97,152 +94,225 @@ export const db = {
       .eq('id', userId)
   },
 
-  // Courses
-  getCourses: async () => {
+  // Admin functions
+  isUserAdmin: async (userId: string) => {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', userId)
+      .single()
+    
+    return { isAdmin: data?.role === 'admin', error }
+  },
+
+  makeUserAdmin: async (userId: string) => {
     return await supabase
-      .from('courses')
-      .select('*')
+      .from('profiles')
+      .update({ role: 'admin' })
+      .eq('id', userId)
+  },
+
+  getAllUsers: async () => {
+    return await supabase
+      .from('profiles')
+      .select('id, email, first_name, last_name, role, created_at, mentorship_status')
       .order('created_at', { ascending: false })
   },
 
-  getCourse: async (courseId: string) => {
+  // Sessions functions
+  getAllSessions: async () => {
     return await supabase
-      .from('courses')
-      .select('*')
-      .eq('id', courseId)
-      .single()
-  },
-
-  // Course modules
-  getCourseModules: async (courseId: string) => {
-    return await supabase
-      .from('modules')
-      .select('*')
-      .eq('course_id', courseId)
-      .order('order_number', { ascending: true })
-  },
-
-  // Lessons
-  getCourseLessons: async (courseId: string) => {
-    return await supabase
-      .from('lessons')
-      .select('*')
-      .eq('course_id', courseId)
-      .order('order_number', { ascending: true })
-  },
-
-  // User progress
-  getUserProgress: async (userId: string) => {
-    return await supabase
-      .from('user_progress')
-      .select('*')
-      .eq('user_id', userId)
-  },
-
-  getUserModuleProgress: async (userId: string) => {
-    return await supabase
-      .from('user_module_progress')
-      .select('*')
-      .eq('user_id', userId)
-  },
-
-  // Get complete course progress with modules and lessons
-  getCourseProgress: async (userId: string, courseId: string) => {
-    // Get course info
-    const courseResponse = await supabase
-      .from('courses')
-      .select('*')
-      .eq('id', courseId)
-      .single()
-
-    // Get modules with progress
-    const modulesResponse = await supabase
-      .from('modules')
+      .from('mentorship_sessions')
       .select(`
-        *,
-        user_module_progress!left(completed, completed_at)
+        id,
+        title,
+        description,
+        scheduled_at,
+        duration_minutes,
+        status,
+        student_id,
+        admin_id,
+        notes,
+        created_at,
+        student:student_id(id, email, first_name, last_name),
+        admin:admin_id(id, email, first_name, last_name)
       `)
-      .eq('course_id', courseId)
-      .eq('user_module_progress.user_id', userId)
-      .order('order_number', { ascending: true })
+      .order('scheduled_at', { ascending: false })
+  },
 
-    // Get lessons with progress  
-    const lessonsResponse = await supabase
-      .from('lessons')
+  createSession: async (sessionData: any) => {
+    return await supabase
+      .from('mentorship_sessions')
+      .insert(sessionData)
+  },
+
+  createMentorshipSession: async (sessionData: any) => {
+    return await supabase
+      .from('mentorship_sessions')
+      .insert(sessionData)
+  },
+
+  updateSessionNotes: async (sessionId: string, notes: string) => {
+    return await supabase
+      .from('mentorship_sessions')
+      .update({ notes, updated_at: new Date().toISOString() })
+      .eq('id', sessionId)
+  },
+
+  // Documents functions
+  getAllDocuments: async () => {
+    return await supabase
+      .from('documents')
       .select(`
-        *,
-        user_progress!left(completed, completed_at)
+        id,
+        title,
+        description,
+        content,
+        file_url,
+        file_type,
+        shared_with_user_id,
+        created_by_admin_id,
+        is_public,
+        created_at,
+        shared_with:shared_with_user_id(id, email, first_name, last_name)
       `)
-      .eq('course_id', courseId)
-      .eq('user_progress.user_id', userId)
-      .order('order_number', { ascending: true })
+      .order('created_at', { ascending: false })
+  },
 
+  createDocument: async (documentData: any) => {
+    return await supabase
+      .from('documents')
+      .insert(documentData)
+  },
+
+  updateDocument: async (documentId: string, updates: any) => {
+    return await supabase
+      .from('documents')
+      .update({ ...updates, updated_at: new Date().toISOString() })
+      .eq('id', documentId)
+  },
+
+  deleteDocument: async (documentId: string) => {
+    return await supabase
+      .from('documents')
+      .delete()
+      .eq('id', documentId)
+  },
+
+  // Chat/Messaging functions
+  getChatMessages: async (userId: string, otherUserId: string) => {
+    return await supabase
+      .from('mentorship_messages')
+      .select(`
+        id,
+        sender_id,
+        receiver_id,
+        message_text,
+        message_type,
+        created_at,
+        read_at,
+        reply_to_id
+      `)
+      .or(`and(sender_id.eq.${userId},receiver_id.eq.${otherUserId}),and(sender_id.eq.${otherUserId},receiver_id.eq.${userId})`)
+      .order('created_at', { ascending: true })
+  },
+
+  sendMessage: async (messageData: { sender_id: string, receiver_id: string, message_text: string, message_type?: string, reply_to_id?: string | null }) => {
+    return await supabase
+      .from('mentorship_messages')
+      .insert({
+        sender_id: messageData.sender_id,
+        receiver_id: messageData.receiver_id,
+        message_text: messageData.message_text,
+        message_type: messageData.message_type || 'text',
+        reply_to_id: messageData.reply_to_id || null
+      })
+  },
+
+  markMessageAsRead: async (messageId: string) => {
+    return await supabase
+      .from('mentorship_messages')
+      .update({ read_at: new Date().toISOString() })
+      .eq('id', messageId)
+  },
+
+  getUnreadMessageCount: async (userId: string) => {
+    return await supabase
+      .from('mentorship_messages')
+      .select('id', { count: 'exact' })
+      .eq('receiver_id', userId)
+      .is('read_at', null)
+  },
+
+  // Get admin user ID (Miguel's ID) for chat functionality
+  getAdminUserId: async () => {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('email', 'miguelfortesmartins4@gmail.com')
+      .single()
+    
+    if (error) {
+      console.error('Error finding admin user:', error);
+    }
+    
+    return { adminId: data?.id, error }
+  },
+
+  // Additional functions needed by Dashboard
+  getMentorshipStats: async (userId: string) => {
+    // For now, return mock stats - you can implement actual stats calculation later
     return {
-      course: courseResponse.data,
-      modules: modulesResponse.data,
-      lessons: lessonsResponse.data,
-      courseError: courseResponse.error,
-      modulesError: modulesResponse.error,
-      lessonsError: lessonsResponse.error
+      totalSessions: 0,
+      completedGoals: 0,
+      activeGoals: 0,
+      nextSession: null
     }
   },
 
-  updateLessonProgress: async (userId: string, lessonId: string, completed: boolean) => {
+  getUpcomingSessions: async (userId: string) => {
     return await supabase
-      .from('user_progress')
-      .upsert({
-        user_id: userId,
-        lesson_id: lessonId,
-        completed,
-        completed_at: completed ? new Date().toISOString() : null
-      })
+      .from('mentorship_sessions')
+      .select('*')
+      .eq('student_id', userId)
+      .eq('status', 'scheduled')
+      .gte('scheduled_at', new Date().toISOString())
+      .order('scheduled_at', { ascending: true })
   },
 
-  updateModuleProgress: async (userId: string, moduleId: string, completed: boolean) => {
+  getPastSessions: async (userId: string) => {
     return await supabase
-      .from('user_module_progress')
-      .upsert({
-        user_id: userId,
-        module_id: moduleId,
-        completed,
-        completed_at: completed ? new Date().toISOString() : null
-      })
+      .from('mentorship_sessions')
+      .select('*')
+      .eq('student_id', userId)
+      .eq('status', 'completed')
+      .lt('scheduled_at', new Date().toISOString())
+      .order('scheduled_at', { ascending: false })
   },
 
-  // Calculate progress percentage for a course
-  calculateCourseProgress: async (userId: string, courseId: string) => {
-    const { data: modules } = await supabase
-      .from('modules')
-      .select('id')
-      .eq('course_id', courseId)
-
-    const { data: completedModules } = await supabase
-      .from('user_module_progress')
-      .select('id')
+  getActiveGoals: async (userId: string) => {
+    return await supabase
+      .from('goals')
+      .select('*')
       .eq('user_id', userId)
-      .eq('completed', true)
-      .in('module_id', modules?.map(m => m.id) || [])
-
-    const totalModules = modules?.length || 0
-    const completed = completedModules?.length || 0
-    
-    return totalModules > 0 ? Math.round((completed / totalModules) * 100) : 0
+      .eq('status', 'active')
+      .order('created_at', { ascending: false })
   },
 
-  // Calendar notes operations
   getCalendarNotes: async (userId: string) => {
     return await supabase
       .from('calendar_notes')
       .select('*')
       .eq('user_id', userId)
+      .order('created_at', { ascending: false })
   },
 
   saveCalendarNote: async (userId: string, dateKey: string, noteText: string) => {
     return await supabase
       .from('calendar_notes')
-      .upsert({
-        user_id: userId,
-        date_key: dateKey,
+      .upsert({ 
+        user_id: userId, 
+        date_key: dateKey, 
         note_text: noteText,
         updated_at: new Date().toISOString()
       })
@@ -254,16 +324,7 @@ export const db = {
       .delete()
       .eq('user_id', userId)
       .eq('date_key', dateKey)
-  },
-
-  getCalendarNote: async (userId: string, dateKey: string) => {
-    return await supabase
-      .from('calendar_notes')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('date_key', dateKey)
-      .single()
   }
 }
 
-export default supabase 
+export default supabase

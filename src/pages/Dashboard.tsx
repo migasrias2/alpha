@@ -7,33 +7,41 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { 
-  BookOpen, 
-  Wrench, 
+  Calendar,
+  MessageCircle,
+  Target,
   TrendingUp, 
   Award, 
   Clock, 
   Users, 
-  Play,
-  Download,
-  Star,
+  Video,
+  CheckCircle,
+  Plus,
   ChevronRight,
   Zap,
-  Target,
-  CheckCircle,
-  LogOut
+  LogOut,
+  BookOpen,
+  Star
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { db } from "@/lib/supabase";
+import { MentorshipChat } from "@/components/MentorshipChat";
 
 const Dashboard = () => {
   const navigate = useNavigate();
-  const { user, signOut } = useAuth();
+  const { user, signOut, isAdmin } = useAuth();
   const { toast } = useToast();
   const [selectedTab, setSelectedTab] = useState("overview");
   const [userProfile, setUserProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  
+  // Mentorship-specific state
+  const [upcomingSessions, setUpcomingSessions] = useState<any[]>([]);
+  const [recentSessions, setRecentSessions] = useState<any[]>([]);
+  const [userGoals, setUserGoals] = useState<any[]>([]);
+  const [mentorshipStats, setMentorshipStats] = useState<any>(null);
   
   // Calendar state
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -43,17 +51,36 @@ const Dashboard = () => {
   const [noteText, setNoteText] = useState("");
   const [notesLoading, setNotesLoading] = useState(true);
   const [savingNote, setSavingNote] = useState(false);
+  
 
-  // Redirect if not authenticated
+
+  // Redirect if not authenticated or if admin
   useEffect(() => {
     if (!user && !loading) {
       navigate('/login');
+      return;
     }
-  }, [user, loading, navigate]);
+    
+    // Redirect admin users to admin dashboard
+    console.log('🔍 Dashboard redirect check:', { user: user?.email, isAdmin, loading });
+    
+    // Special handling for Miguel's admin account
+    if (user?.email === 'miguelfortesmartins4@gmail.com' && !loading) {
+      console.log('👑 Miguel detected - forcing admin redirect');
+      navigate('/admin');
+      return;
+    }
+    
+    if (user && isAdmin && !loading) {
+      console.log('🚀 Admin user redirect');
+      navigate('/admin');
+      return;
+    }
+  }, [user, loading, navigate, isAdmin]);
 
-  // Load user profile data
+  // Load mentorship data
   useEffect(() => {
-    const loadData = async () => {
+    const loadMentorshipData = async () => {
       if (!user) return;
 
       try {
@@ -61,14 +88,30 @@ const Dashboard = () => {
         const { data: profile } = await db.getUserProfile(user.id);
         setUserProfile(profile);
 
+        // Load mentorship statistics
+        const stats = await db.getMentorshipStats(user.id);
+        setMentorshipStats(stats);
+
+        // Load upcoming sessions
+        const { data: upcoming } = await db.getUpcomingSessions(user.id);
+        setUpcomingSessions(upcoming || []);
+
+        // Load recent sessions
+        const { data: recent } = await db.getPastSessions(user.id);
+        setRecentSessions(recent || []);
+
+        // Load active goals
+        const { data: goals } = await db.getActiveGoals(user.id);
+        setUserGoals(goals || []);
+
       } catch (error) {
-        console.error('Error loading data:', error);
+        console.error('Error loading mentorship data:', error);
       } finally {
         setLoading(false);
       }
     };
 
-    loadData();
+    loadMentorshipData();
   }, [user]);
 
   // Load calendar notes from database
@@ -121,168 +164,11 @@ const Dashboard = () => {
     }
   };
 
-  // Featured courses data with real progress
-  const [courseProgress, setCourseProgress] = useState([
-    {
-      id: 'fc67bc80-0ab4-4ef5-b0db-26e9daac2b09',
-      title: "Prompting is 🔑",
-      description: "Master automated content creation and scale your agency's output.",
-      progress: 0,
-      duration: "4h 20m",
-      lessons: 6,
-      completed: 0,
-      difficulty: "Beginner",
-      category: "Content Creation"
-    },
-    {
-      id: 2,
-      title: "Cursor for Web Development",
-      description: "Build faster with AI-assisted coding",
-      progress: 0,
-      duration: "3h 45m",
-      lessons: 8,
-      completed: 0,
-      difficulty: "Intermediate",
-      category: "Development"
-    }
-  ]);
 
-  // Load real progress data using direct Supabase calls
-  const loadProgress = async () => {
-    if (!user) return;
-    
-    try {
-      const { supabase } = await import('@/lib/supabase');
-      
-      // Get all modules for the Prompting course
-      const { data: modules } = await supabase
-        .from('modules')
-        .select('id')
-        .eq('course_id', 'fc67bc80-0ab4-4ef5-b0db-26e9daac2b09');
 
-      // Get completed modules for this user
-      const { data: completedModules } = await supabase
-        .from('user_module_progress')
-        .select('id')
-        .eq('user_id', user.id)
-        .eq('completed', true)
-        .in('module_id', modules?.map(m => m.id) || []);
 
-      const totalModules = modules?.length || 0;
-      const completed = completedModules?.length || 0;
-      const promptingProgress = totalModules > 0 ? Math.round((completed / totalModules) * 100) : 0;
-      
-      setCourseProgress(prev => prev.map(course => 
-        course.id === 'fc67bc80-0ab4-4ef5-b0db-26e9daac2b09' 
-          ? { ...course, progress: promptingProgress, completed: completed }
-          : course
-      ));
-    } catch (error) {
-      console.error('Error loading progress:', error);
-    }
-  };
 
-  useEffect(() => {
-    loadProgress();
-  }, [user]);
 
-  // Refresh progress when returning to the page
-  useEffect(() => {
-    const handleFocus = () => {
-      loadProgress();
-    };
-
-    window.addEventListener('focus', handleFocus);
-    
-    // Also refresh when page becomes visible again
-    const handleVisibilityChange = () => {
-      if (!document.hidden) {
-        loadProgress();
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
-    return () => {
-      window.removeEventListener('focus', handleFocus);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, [user]);
-
-  const aiTools = [
-    {
-      name: "Lovable",
-      description: "Build something Lovable - Create apps and websites by chatting with AI",
-      url: "https://lovable.dev/#via=897192",
-      category: "Development",
-      emoji: "💖",
-      rating: "4.9",
-      downloads: "10k+",
-      unlocked: true
-    },
-    {
-      name: "Replit",
-      description: "Code, create, and learn together in the browser with instant environments",
-      url: "https://replit.com/refer/bobbyio",
-      category: "Development", 
-      emoji: "🔧",
-      rating: "4.8",
-      downloads: "50k+",
-      unlocked: true
-    },
-    {
-      name: "Bolt",
-      description: "AI-powered development platform for rapid prototyping and deployment",
-      url: "https://bolt.new/?rid=9cce34",
-      category: "Deployment",
-      emoji: "⚡",
-      rating: "4.7",
-      downloads: "25k+",
-      unlocked: true
-    },
-    {
-      name: "v0",
-      description: "Generate UI components with AI - Vercel's design-to-code platform",
-      url: "https://v0.dev/",
-      category: "Design",
-      emoji: "🎨",
-      rating: "4.9",
-      downloads: "30k+",
-      unlocked: true
-    },
-    {
-      name: "Tempo",
-      description: "Modern AI-powered development workflow and collaboration platform",
-      url: "https://www.tempo.new/",
-      category: "Workflow",
-      emoji: "🚀",
-      rating: "4.6",
-      downloads: "15k+",
-      unlocked: true
-    },
-    {
-      name: "Same",
-      description: "AI development assistant for seamless coding and project management",
-      url: "https://same.dev/",
-      category: "Development",
-      emoji: "🤖",
-      rating: "4.8",
-      downloads: "20k+",
-      unlocked: true
-    },
-    {
-      name: "Onlook",
-      description: "Visual development environment with AI-powered design capabilities",
-      url: "https://onlook.com/",
-      category: "Visual",
-      emoji: "👁️",
-      rating: "4.7",
-      downloads: "12k+",
-      unlocked: true
-    }
-  ];
-
-  const recentActivity: any[] = []; // Empty until we track real activity
 
   // Calendar helper functions
   const getDaysInMonth = (date: Date) => {
@@ -443,11 +329,51 @@ const Dashboard = () => {
     return !!calendarNotes[dateKey];
   };
 
+  const hasSessionOnDate = (day: number) => {
+    const checkDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), day);
+    return upcomingSessions.some(session => {
+      const sessionDate = new Date(session.scheduled_at);
+      return sessionDate.getFullYear() === checkDate.getFullYear() &&
+             sessionDate.getMonth() === checkDate.getMonth() &&
+             sessionDate.getDate() === checkDate.getDate();
+    });
+  };
+
+  const getSessionsForDate = (day: number) => {
+    const checkDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), day);
+    return upcomingSessions.filter(session => {
+      const sessionDate = new Date(session.scheduled_at);
+      return sessionDate.getFullYear() === checkDate.getFullYear() &&
+             sessionDate.getMonth() === checkDate.getMonth() &&
+             sessionDate.getDate() === checkDate.getDate();
+    });
+  };
+
   const stats = [
-    { label: "Courses Completed", value: 0, emoji: "📚", color: "text-black" },
-    { label: "Tools Unlocked", value: 0, emoji: "🛠️", color: "text-black" },
-    { label: "Learning Points", value: 0, emoji: "⭐", color: "text-black" },
-    { label: "Time Saved", value: "0h", emoji: "⏰", color: "text-black" }
+    { 
+      label: "Sessions Completed", 
+      value: mentorshipStats?.total_sessions_completed || 0, 
+      emoji: "🎯", 
+      color: "text-black" 
+    },
+    { 
+      label: "Goals Achieved", 
+      value: mentorshipStats?.goals_completed || 0, 
+      emoji: "🏆", 
+      color: "text-black" 
+    },
+    { 
+      label: "Mentorship Hours", 
+      value: `${Math.round(mentorshipStats?.total_mentorship_hours || 0)}h`, 
+      emoji: "⏰", 
+      color: "text-black" 
+    },
+    { 
+      label: "Active Goals", 
+      value: userGoals.length, 
+      emoji: "🎯", 
+      color: "text-black" 
+    }
   ];
 
   if (loading) {
@@ -472,14 +398,17 @@ const Dashboard = () => {
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <div className="relative z-20 sticky top-0">
-        <div className="container mx-auto px-6 py-6 flex items-center justify-between">
+        <div className="container mx-auto px-6 py-6">
+          <div className="bg-white shadow-2xl border-2 border-gray-200 p-4 rounded-full backdrop-blur-md ring-1 ring-gray-100 flex items-center justify-between">
           <div className="flex items-center space-x-2">
-            <span className="text-2xl font-bold text-black">opsa</span>
+            <span 
+              className="text-2xl font-bold text-black cursor-pointer hover:opacity-80 transition-opacity" 
+              onClick={() => navigate('/dashboard')}
+            >
+              opsa
+            </span>
           </div>
           <div className="flex items-center space-x-4">
-            <Button variant="ghost" onClick={() => navigate('/')} className="text-black hover:bg-black/5 rounded-full">
-              Home
-            </Button>
             <Button variant="ghost" onClick={handleSignOut} className="text-black hover:bg-black/5 rounded-full">
               👋 Sign Out
             </Button>
@@ -492,6 +421,7 @@ const Dashboard = () => {
                 {userProfile?.first_name?.[0]}{userProfile?.last_name?.[0] || user.email?.[0]?.toUpperCase()}
               </AvatarFallback>
             </Avatar>
+          </div>
           </div>
         </div>
       </div>
@@ -510,11 +440,15 @@ const Dashboard = () => {
                 Welcome back, {displayName}! 👋
               </h1>
               <p className="text-gray-600 mt-2 text-lg">
-                Continue your AI transformation journey with {companyName}
+                Your personal AI mentorship dashboard - let's achieve your goals together
               </p>
             </div>
             <Badge variant="outline" className="text-lg px-6 py-3 border-black/20 text-black rounded-full">
-              Getting Started
+              {userProfile?.mentorship_status === 'new' ? 'Welcome!' : 
+               userProfile?.mentorship_status === 'onboarded' ? 'Getting Started' :
+               userProfile?.mentorship_status === 'active' ? 'Active Mentee' :
+               userProfile?.mentorship_status === 'paused' ? 'On Break' :
+               'Growing'}
             </Badge>
           </div>
 
@@ -546,7 +480,7 @@ const Dashboard = () => {
         {/* Main Content Tabs */}
         <Tabs value={selectedTab} onValueChange={setSelectedTab}>
           <div className="flex justify-center mb-8">
-            <div className="bg-white shadow-lg p-1 rounded-full min-w-[650px] grid grid-cols-5 gap-1">
+            <div className="bg-white shadow-md border border-gray-200 p-3 rounded-full min-w-[750px] grid grid-cols-5 gap-2 backdrop-blur-md">
               <button
                 onClick={() => setSelectedTab("overview")}
                 className={`px-6 py-3 rounded-full font-medium transition-all duration-200 ${
@@ -558,24 +492,24 @@ const Dashboard = () => {
                 📊 Overview
               </button>
               <button
-                onClick={() => setSelectedTab("courses")}
+                onClick={() => setSelectedTab("sessions")}
                 className={`px-6 py-3 rounded-full font-medium transition-all duration-200 ${
-                  selectedTab === "courses"
+                  selectedTab === "sessions"
                     ? "bg-black text-white"
                     : "text-gray-600 hover:text-black hover:bg-gray-50"
                 }`}
               >
-                📚 Courses
+                🎯 Sessions
               </button>
               <button
-                onClick={() => setSelectedTab("tools")}
+                onClick={() => setSelectedTab("goals")}
                 className={`px-6 py-3 rounded-full font-medium transition-all duration-200 ${
-                  selectedTab === "tools"
+                  selectedTab === "goals"
                     ? "bg-black text-white"
                     : "text-gray-600 hover:text-black hover:bg-gray-50"
                 }`}
               >
-                🤖 AI Tools
+                🏆 Goals
               </button>
               <button
                 onClick={() => setSelectedTab("progress")}
@@ -603,80 +537,214 @@ const Dashboard = () => {
           {/* Overview Tab */}
           <TabsContent value="overview" className="space-y-6">
             <div className="grid lg:grid-cols-3 gap-6">
-              {/* Continue Learning */}
+              {/* Mentorship Chat */}
               <div className="lg:col-span-2">
-                <Card className="border-0 bg-white rounded-2xl shadow-lg">
-                  <CardHeader className="pb-4">
-                    <CardTitle className="flex items-center text-black text-xl">
-                      ▶️ Continue Learning
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    {courseProgress.length > 0 ? (
-                      courseProgress.slice(0, 2).map((course) => (
-                        <div key={course.id} className="p-6 border border-gray-100 rounded-2xl hover:bg-gray-50 cursor-pointer transition-colors">
-                          <div className="flex items-start justify-between mb-4">
-                            <div className="flex-1">
-                              <h3 className="font-semibold text-black text-lg mb-2">{course.title}</h3>
-                              <p className="text-gray-600 mb-4">{course.description}</p>
-                            </div>
-                            <Badge variant="outline" className="border-black/20 text-black rounded-full ml-4 flex-shrink-0">{course.difficulty}</Badge>
-                          </div>
-                          <div className="flex items-center gap-6">
-                            <div className="flex-1">
-                              <div className="flex items-center justify-between mb-3">
-                                <span className="text-sm font-medium text-black">Progress</span>
-                                <span className="text-sm text-gray-600">{course.progress}%</span>
-                              </div>
-                              <Progress value={course.progress} className="h-3 rounded-full mb-2" />
-                              <p className="text-sm text-gray-500">
-                                {course.completed}/{course.lessons} modules • {course.progress}% complete
-                              </p>
-                            </div>
-                            <Button size="sm" className="bg-black text-white hover:bg-gray-800 rounded-full px-6 flex-shrink-0" onClick={() => navigate(`/course/${course.id}`)}>
-                              Start Course
-                              <ChevronRight className="h-4 w-4 ml-1" />
-                            </Button>
-                          </div>
-                        </div>
-                      ))
-                    ) : (
-                      <div className="text-center py-12">
-                        <div className="text-6xl mb-4">📚</div>
-                        <h3 className="text-lg font-medium text-black mb-2">No Courses Available</h3>
-                        <p className="text-gray-600">New courses will appear here when available.</p>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
+                <MentorshipChat />
               </div>
 
-              {/* Recent Activity */}
+              {/* Recent Sessions & Goals */}
               <Card className="border-0 bg-white rounded-2xl shadow-lg">
                 <CardHeader className="pb-4">
                   <CardTitle className="flex items-center text-black text-xl">
-                    📈 Recent Activity
+                    📈 Recent Progress
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  {recentActivity.length > 0 ? (
-                    <div className="space-y-4">
-                      {recentActivity.map((activity, index) => (
-                        <div key={index} className="flex items-start space-x-4">
-                          <div className="flex-shrink-0 w-3 h-3 bg-black rounded-full mt-2"></div>
-                          <div className="flex-1">
-                            <p className="text-sm font-medium text-black">{activity.action}</p>
-                            <p className="text-sm text-gray-600">{activity.detail}</p>
-                            <p className="text-xs text-gray-400">{activity.time}</p>
+                  <div className="space-y-4">
+                    {/* Recent Sessions */}
+                    {recentSessions.length > 0 && (
+                      <div>
+                        <h4 className="text-sm font-medium text-black mb-3">Latest Sessions</h4>
+                        {recentSessions.slice(0, 2).map((session, index) => (
+                          <div key={index} className="flex items-start space-x-3 mb-3">
+                            <div className="flex-shrink-0 w-3 h-3 bg-black rounded-full mt-2"></div>
+                            <div className="flex-1">
+                              <p className="text-sm font-medium text-black">{session.title || 'Mentorship Session'}</p>
+                              <p className="text-xs text-gray-600">{new Date(session.scheduled_at).toLocaleDateString()}</p>
+                            </div>
                           </div>
+                        ))}
+                      </div>
+                    )}
+                    
+                    {/* Active Goals */}
+                    {userGoals.length > 0 && (
+                      <div>
+                        <h4 className="text-sm font-medium text-black mb-3">Active Goals</h4>
+                        {userGoals.slice(0, 3).map((goal, index) => (
+                          <div key={index} className="flex items-start space-x-3 mb-3">
+                            <div className="flex-shrink-0 w-3 h-3 bg-gray-600 rounded-full mt-2"></div>
+                            <div className="flex-1">
+                              <p className="text-sm font-medium text-black">{goal.title}</p>
+                              <div className="flex items-center mt-1">
+                                <div className="flex-1 bg-gray-200 rounded-full h-1.5 mr-2">
+                                  <div 
+                                    className="bg-black h-1.5 rounded-full" 
+                                    style={{ width: `${goal.progress_percentage}%` }}
+                                  ></div>
+                                </div>
+                                <span className="text-xs text-gray-500">{goal.progress_percentage}%</span>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    
+                    {/* Empty State */}
+                    {recentSessions.length === 0 && userGoals.length === 0 && (
+                      <div className="text-center py-8">
+                        <div className="text-5xl mb-3">🚀</div>
+                        <h3 className="text-sm font-medium text-black mb-1">Ready to Start?</h3>
+                        <p className="text-xs text-gray-600">Book your first session to begin!</p>
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
+
+          {/* Sessions Tab */}
+          <TabsContent value="sessions" className="space-y-6">
+            <div className="grid gap-6">
+              {/* Book New Session */}
+              <Card className="border-0 bg-white rounded-2xl shadow-lg">
+                <CardHeader className="pb-4">
+                  <CardTitle className="flex items-center text-black text-xl">
+                    💬 Direct Mentorship
+                  </CardTitle>
+                  <CardDescription>
+                    Get instant mentorship support through direct messaging
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="bg-gradient-to-r from-blue-50 to-purple-50 rounded-2xl p-6">
+                    <div className="flex items-center justify-between mb-4">
+                      <div>
+                        <h3 className="text-lg font-semibold text-black mb-2">Ready for your next breakthrough?</h3>
+                        <p className="text-gray-600">Chat with Miguel directly using the live chat above for instant guidance and support</p>
+                      </div>
+                      <div className="text-4xl">💬</div>
+                    </div>
+                    <Button 
+                      className="bg-black text-white hover:bg-gray-800 rounded-full px-6"
+                      onClick={() => setSelectedTab("overview")}
+                    >
+                      Start Chatting
+                      <MessageCircle className="h-4 w-4 ml-1" />
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Upcoming Sessions */}
+              <Card className="border-0 bg-white rounded-2xl shadow-lg">
+                <CardHeader className="pb-4">
+                  <CardTitle className="flex items-center text-black text-xl">
+                    🎯 Upcoming Sessions
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {upcomingSessions.length > 0 ? (
+                    <div className="space-y-4">
+                      {upcomingSessions.map((session, index) => (
+                        <motion.div
+                          key={session.id}
+                          initial={{ opacity: 0, y: 20 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ delay: index * 0.1 }}
+                        >
+                          <div className="p-6 border border-gray-100 rounded-2xl hover:shadow-md transition-shadow">
+                            <div className="flex items-start justify-between mb-4">
+                              <div className="flex-1">
+                                <h3 className="font-semibold text-black text-lg mb-2">{session.title || 'Mentorship Session'}</h3>
+                                <p className="text-gray-600 mb-3">{session.description || 'One-on-one mentorship session'}</p>
+                                <div className="flex items-center space-x-4 text-sm text-gray-600">
+                                  <span className="flex items-center">
+                                    <Calendar className="h-4 w-4 mr-1" />
+                                    {new Date(session.scheduled_at).toLocaleDateString()}
+                                  </span>
+                                  <span className="flex items-center">
+                                    <Clock className="h-4 w-4 mr-1" />
+                                    {new Date(session.scheduled_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                                  </span>
+                                  <span className="flex items-center">
+                                    <Video className="h-4 w-4 mr-1" />
+                                    {session.duration_minutes} min
+                                  </span>
+                                </div>
+                              </div>
+                              <Badge variant="outline" className="border-green-200 text-green-600 bg-green-50 rounded-full">
+                                {session.status}
+                              </Badge>
+                            </div>
+                            <div className="flex items-center gap-3">
+                              <Button size="sm" className="bg-black text-white hover:bg-gray-800 rounded-full">
+                                Join Session
+                                <Video className="h-4 w-4 ml-1" />
+                              </Button>
+                              <Button size="sm" variant="outline" className="border-black/20 text-black hover:bg-gray-50 rounded-full">
+                                Reschedule
+                              </Button>
+                              <Button size="sm" variant="outline" className="border-red-200 text-red-600 hover:bg-red-50 rounded-full">
+                                Cancel
+                              </Button>
+                            </div>
+                          </div>
+                        </motion.div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-12">
+                      <div className="text-6xl mb-4">💬</div>
+                      <h3 className="text-lg font-medium text-black mb-2">No Scheduled Sessions</h3>
+                      <p className="text-gray-600 mb-4">Get instant support through the live chat with Miguel</p>
+                      <Button 
+                        className="bg-black text-white hover:bg-gray-800 rounded-full px-6"
+                        onClick={() => setSelectedTab("overview")}
+                      >
+                        Open Chat
+                        <MessageCircle className="h-4 w-4 ml-1" />
+                      </Button>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Recent Sessions */}
+              <Card className="border-0 bg-white rounded-2xl shadow-lg">
+                <CardHeader className="pb-4">
+                  <CardTitle className="flex items-center text-black text-xl">
+                    📝 Recent Sessions
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {recentSessions.length > 0 ? (
+                    <div className="space-y-4">
+                      {recentSessions.map((session, index) => (
+                        <div key={session.id} className="p-6 border border-gray-100 rounded-2xl">
+                          <div className="flex items-start justify-between mb-3">
+                            <div className="flex-1">
+                              <h3 className="font-semibold text-black text-lg mb-1">{session.title || 'Mentorship Session'}</h3>
+                              <p className="text-gray-600 text-sm mb-2">{new Date(session.scheduled_at).toLocaleDateString()}</p>
+                            </div>
+                            <Badge variant="outline" className="border-green-200 text-green-600 bg-green-50 rounded-full">
+                              Completed
+                            </Badge>
+                          </div>
+                          <Button size="sm" variant="outline" className="border-black/20 text-black hover:bg-gray-50 rounded-full">
+                            View Notes
+                            <MessageCircle className="h-4 w-4 ml-1" />
+                          </Button>
                         </div>
                       ))}
                     </div>
                   ) : (
                     <div className="text-center py-8">
-                      <div className="text-5xl mb-3">📊</div>
-                      <h3 className="text-sm font-medium text-black mb-1">No Activity Yet</h3>
-                      <p className="text-xs text-gray-600">Your learning activity will appear here.</p>
+                      <div className="text-5xl mb-3">📝</div>
+                      <h3 className="text-sm font-medium text-black mb-1">No Sessions Yet</h3>
+                      <p className="text-xs text-gray-600">Your completed sessions will appear here.</p>
                     </div>
                   )}
                 </CardContent>
@@ -684,111 +752,153 @@ const Dashboard = () => {
             </div>
           </TabsContent>
 
-          {/* Courses Tab */}
-          <TabsContent value="courses" className="space-y-6">
-            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {courseProgress.map((course, index) => (
-                <motion.div
-                  key={course.id}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: index * 0.1 }}
-                >
-                  <Card className="h-full border-0 bg-white rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300 hover:-translate-y-1 flex flex-col">
-                    <CardHeader className="pb-4 flex-grow">
-                      <div className="flex items-center justify-between mb-4">
-                        <Badge variant="outline" className="border-black/20 text-black rounded-full">{course.category}</Badge>
-                        <Badge variant="outline" className="border-gray-300 text-gray-600 rounded-full">{course.difficulty}</Badge>
-                      </div>
-                      <CardTitle className="text-xl text-black mb-3">{course.title}</CardTitle>
-                      <CardDescription className="text-gray-600 flex-grow">{course.description}</CardDescription>
-                    </CardHeader>
-                    <CardContent className="pt-0">
-                      <div className="space-y-4">
-                        <div className="flex items-center justify-between text-sm text-gray-600">
-                          <span>{course.lessons} modules</span>
-                          <span>{course.duration}</span>
-                        </div>
-                        <div>
-                          <div className="flex items-center justify-between mb-3">
-                            <span className="text-sm font-medium text-black">Progress</span>
-                            <span className="text-sm text-gray-600">{course.progress}%</span>
-                          </div>
-                          <Progress value={course.progress} className="h-3 rounded-full mb-4" />
-                        </div>
-                        <Button className="w-full bg-black text-white hover:bg-gray-800 rounded-full py-3" onClick={() => navigate(`/course/${course.id}`)}>
-                          {course.progress > 0 ? 'Continue' : 'Start Course'}
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </motion.div>
-              ))}
-            </div>
-          </TabsContent>
-
-          {/* Tools Tab */}
-          <TabsContent value="tools" className="space-y-6">
-            {aiTools.length > 0 ? (
-              <div className="grid md:grid-cols-2 gap-6">
-                {aiTools.map((tool, index) => (
-                  <motion.div
-                    key={index}
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: index * 0.1 }}
-                  >
-                    <Card 
-                      className={`border-0 bg-white rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300 hover:-translate-y-1 cursor-pointer ${!tool.unlocked ? 'opacity-60' : ''}`}
-                      onClick={() => tool.unlocked && window.open(tool.url, '_blank')}
-                    >
-                      <CardHeader className="pb-4">
-                        <div className="flex items-center justify-between mb-3">
-                          <Badge variant="outline" className="border-black/20 text-black rounded-full">{tool.category}</Badge>
-                          <div className="flex items-center space-x-1">
-                            <Star className="h-4 w-4 fill-black text-black" />
-                            <span className="text-sm font-medium">{tool.rating}</span>
-                          </div>
-                        </div>
-                        <CardTitle className="flex items-center text-black text-xl">
-                          <span className="text-2xl mr-3">{tool.emoji}</span>
-                          {tool.name}
-                        </CardTitle>
-                        <CardDescription className="text-gray-600">{tool.description}</CardDescription>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center space-x-4 text-sm text-gray-600">
-                            <span className="flex items-center">
-                              <Download className="h-4 w-4 mr-1" />
-                              {tool.downloads}
-                            </span>
-                          </div>
-                          <Button 
-                            disabled={!tool.unlocked}
-                            variant={tool.unlocked ? "default" : "outline"}
-                            className={tool.unlocked ? "bg-black text-white hover:bg-gray-800 rounded-full" : "border-gray-300 text-gray-600 rounded-full"}
-                            onClick={() => tool.unlocked && window.open(tool.url, '_blank')}
-                          >
-                            {tool.unlocked ? 'Visit Tool' : 'Unlock'}
-                          </Button>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </motion.div>
-                ))}
-              </div>
-            ) : (
+          {/* Goals Tab */}
+          <TabsContent value="goals" className="space-y-6">
+            <div className="grid gap-6">
+              {/* Add New Goal */}
               <Card className="border-0 bg-white rounded-2xl shadow-lg">
-                <CardContent className="py-16">
-                  <div className="text-center">
-                    <div className="text-6xl mb-4">🛠️</div>
-                    <h3 className="text-lg font-medium text-black mb-2">No AI Tools Available</h3>
-                    <p className="text-gray-600">AI tools and templates will be available as you progress through courses.</p>
+                <CardHeader className="pb-4">
+                  <CardTitle className="flex items-center text-black text-xl">
+                    🎯 Set New Goal
+                  </CardTitle>
+                  <CardDescription>
+                    Define your mentorship objectives and track your progress
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="bg-gradient-to-r from-green-50 to-blue-50 rounded-2xl p-6">
+                    <div className="flex items-center justify-between mb-4">
+                      <div>
+                        <h3 className="text-lg font-semibold text-black mb-2">Ready to level up?</h3>
+                        <p className="text-gray-600">Set specific, measurable goals to maximize your mentorship experience</p>
+                      </div>
+                      <div className="text-4xl">🚀</div>
+                    </div>
+                    <Button className="bg-black text-white hover:bg-gray-800 rounded-full px-6">
+                      Add Goal
+                      <Plus className="h-4 w-4 ml-1" />
+                    </Button>
                   </div>
                 </CardContent>
               </Card>
-            )}
+
+              {/* Active Goals */}
+              <Card className="border-0 bg-white rounded-2xl shadow-lg">
+                <CardHeader className="pb-4">
+                  <CardTitle className="flex items-center text-black text-xl">
+                    🏆 Active Goals
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {userGoals.length > 0 ? (
+                    <div className="space-y-4">
+                      {userGoals.map((goal, index) => (
+                        <motion.div
+                          key={goal.id}
+                          initial={{ opacity: 0, y: 20 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ delay: index * 0.1 }}
+                        >
+                          <div className="p-6 border border-gray-100 rounded-2xl hover:shadow-md transition-shadow">
+                            <div className="flex items-start justify-between mb-4">
+                              <div className="flex-1">
+                                <div className="flex items-center space-x-3 mb-2">
+                                  <h3 className="font-semibold text-black text-lg">{goal.title}</h3>
+                                  <Badge variant="outline" className={`rounded-full ${
+                                    goal.priority === 'high' ? 'border-red-200 text-red-600 bg-red-50' :
+                                    goal.priority === 'medium' ? 'border-yellow-200 text-yellow-600 bg-yellow-50' :
+                                    'border-green-200 text-green-600 bg-green-50'
+                                  }`}>
+                                    {goal.priority} priority
+                                  </Badge>
+                                </div>
+                                <p className="text-gray-600 mb-3">{goal.description}</p>
+                                <div className="flex items-center space-x-4 text-sm text-gray-600 mb-3">
+                                  <span className="flex items-center">
+                                    <Target className="h-4 w-4 mr-1" />
+                                    {goal.category}
+                                  </span>
+                                  {goal.target_date && (
+                                    <span className="flex items-center">
+                                      <Calendar className="h-4 w-4 mr-1" />
+                                      Target: {new Date(goal.target_date).toLocaleDateString()}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                            
+                            {/* Progress Bar */}
+                            <div className="mb-4">
+                              <div className="flex items-center justify-between mb-2">
+                                <span className="text-sm font-medium text-black">Progress</span>
+                                <span className="text-sm text-gray-600">{goal.progress_percentage}%</span>
+                              </div>
+                              <div className="w-full bg-gray-200 rounded-full h-3">
+                                <div 
+                                  className="bg-gradient-to-r from-blue-500 to-purple-600 h-3 rounded-full transition-all duration-300" 
+                                  style={{ width: `${goal.progress_percentage}%` }}
+                                ></div>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-3">
+                              <Button size="sm" className="bg-black text-white hover:bg-gray-800 rounded-full">
+                                Update Progress
+                              </Button>
+                              <Button size="sm" variant="outline" className="border-black/20 text-black hover:bg-gray-50 rounded-full">
+                                Edit Goal
+                              </Button>
+                              {goal.progress_percentage === 100 && (
+                                <Button size="sm" variant="outline" className="border-gray-200 text-black hover:bg-gray-50 rounded-full">
+                                  Mark Complete
+                                  <CheckCircle className="h-4 w-4 ml-1" />
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                        </motion.div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-12">
+                      <div className="text-6xl mb-4">🎯</div>
+                      <h3 className="text-lg font-medium text-black mb-2">No Goals Set</h3>
+                      <p className="text-gray-600 mb-4">Start by setting your first mentorship goal</p>
+                      <Button 
+                        className="bg-black text-white hover:bg-gray-800 rounded-full px-6"
+                        onClick={() => {
+                          // TODO: Add goal creation functionality
+                          toast({
+                            title: "Coming Soon! 🚀",
+                            description: "Goal management feature will be available soon.",
+                          });
+                        }}
+                      >
+                        Add Your First Goal
+                        <Plus className="h-4 w-4 ml-1" />
+                      </Button>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Completed Goals */}
+              <Card className="border-0 bg-white rounded-2xl shadow-lg">
+                <CardHeader className="pb-4">
+                  <CardTitle className="flex items-center text-black text-xl">
+                    ✅ Completed Goals
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-center py-8">
+                    <div className="text-5xl mb-3">🏆</div>
+                    <h3 className="text-sm font-medium text-black mb-1">No Completed Goals Yet</h3>
+                    <p className="text-xs text-gray-600">Your achievements will appear here as you reach your goals.</p>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
           </TabsContent>
 
           {/* Progress Tab */}
@@ -797,36 +907,60 @@ const Dashboard = () => {
               <Card className="border-0 bg-white rounded-2xl shadow-lg">
                 <CardHeader className="pb-4">
                   <CardTitle className="flex items-center text-black text-xl">
-                    🎯 Learning Goals
+                    📊 Mentorship Progress
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-6">
                   <div className="p-6 border border-gray-100 rounded-2xl">
                     <div className="flex items-center justify-between mb-4">
-                      <h3 className="font-medium text-black">Complete Your First Course</h3>
-                      <span className="text-2xl">✅</span>
+                      <h3 className="font-medium text-black">Sessions Completed</h3>
+                      <span className="text-2xl">🎯</span>
                     </div>
                     <div className="space-y-3">
                       <div className="flex items-center justify-between">
-                        <span className="text-sm font-medium text-black">Progress</span>
-                        <span className="text-sm text-gray-600">0%</span>
+                        <span className="text-sm font-medium text-black">Total Sessions</span>
+                        <span className="text-sm text-gray-600">{mentorshipStats?.total_sessions_completed || 0}</span>
                       </div>
-                      <Progress value={0} className="h-3 rounded-full" />
-                      <p className="text-sm text-gray-600">0/{courseProgress.length} completed</p>
+                      <Progress value={Math.min((mentorshipStats?.total_sessions_completed || 0) * 10, 100)} className="h-3 rounded-full" />
+                      <p className="text-sm text-gray-600">{Math.round(mentorshipStats?.total_mentorship_hours || 0)} hours of mentorship</p>
                     </div>
                   </div>
                   <div className="p-6 border border-gray-100 rounded-2xl">
                     <div className="flex items-center justify-between mb-4">
-                      <h3 className="font-medium text-black">Start Learning Journey</h3>
-                      <span className="text-2xl">⚡</span>
+                      <h3 className="font-medium text-black">Goals Achievement</h3>
+                      <span className="text-2xl">🏆</span>
                     </div>
                     <div className="space-y-3">
                       <div className="flex items-center justify-between">
-                        <span className="text-sm font-medium text-black">Progress</span>
-                        <span className="text-sm text-gray-600">0%</span>
+                        <span className="text-sm font-medium text-black">Completed Goals</span>
+                        <span className="text-sm text-gray-600">{mentorshipStats?.goals_completed || 0}</span>
                       </div>
-                      <Progress value={0} className="h-3 rounded-full" />
-                      <p className="text-sm text-gray-600">Begin your first lesson</p>
+                      <Progress value={Math.min((mentorshipStats?.goals_completed || 0) * 20, 100)} className="h-3 rounded-full" />
+                      <p className="text-sm text-gray-600">{userGoals.length} active goals in progress</p>
+                    </div>
+                  </div>
+                  <div className="p-6 border border-gray-100 rounded-2xl">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="font-medium text-black">Mentorship Journey</h3>
+                      <span className="text-2xl">🚀</span>
+                    </div>
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-medium text-black">Days Since Start</span>
+                        <span className="text-sm text-gray-600">
+                          {mentorshipStats?.mentorship_started_at 
+                            ? Math.floor((new Date().getTime() - new Date(mentorshipStats.mentorship_started_at).getTime()) / (1000 * 60 * 60 * 24))
+                            : 0
+                          } days
+                        </span>
+                      </div>
+                      <div className="text-sm text-gray-600">
+                        {mentorshipStats?.last_session_date ? (
+                          <span>Last session: {new Date(mentorshipStats.last_session_date).toLocaleDateString()}</span>
+                        ) : (
+                          <span>Ready to schedule your first session!</span>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </CardContent>
@@ -835,14 +969,56 @@ const Dashboard = () => {
               <Card className="border-0 bg-white rounded-2xl shadow-lg">
                 <CardHeader className="pb-4">
                   <CardTitle className="flex items-center text-black text-xl">
-                    🏆 Achievements
+                    🏆 Milestones & Achievements
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-center py-8">
-                    <div className="text-6xl mb-4">🏅</div>
-                    <h3 className="text-lg font-medium text-black mb-2">No Achievements Yet</h3>
-                    <p className="text-gray-600">Complete modules and courses to earn achievements.</p>
+                  <div className="space-y-4">
+                    {/* Milestones based on actual progress */}
+                    {(mentorshipStats?.total_sessions_completed || 0) >= 1 && (
+                      <div className="flex items-center space-x-3 p-3 bg-gray-50 rounded-xl">
+                        <div className="w-8 h-8 bg-black rounded-full flex items-center justify-center text-white text-sm font-bold">
+                          ✓
+                        </div>
+                        <div>
+                          <p className="font-medium text-black">First Session Complete</p>
+                          <p className="text-sm text-gray-600">Welcome to your mentorship journey!</p>
+                        </div>
+                      </div>
+                    )}
+                    
+                    {(mentorshipStats?.total_sessions_completed || 0) >= 5 && (
+                      <div className="flex items-center space-x-3 p-3 bg-gray-50 rounded-xl">
+                        <div className="w-8 h-8 bg-gray-600 rounded-full flex items-center justify-center text-white text-sm font-bold">
+                          5
+                        </div>
+                        <div>
+                          <p className="font-medium text-black">5 Sessions Milestone</p>
+                          <p className="text-sm text-gray-600">Building momentum!</p>
+                        </div>
+                      </div>
+                    )}
+                    
+                    {(mentorshipStats?.goals_completed || 0) >= 1 && (
+                      <div className="flex items-center space-x-3 p-3 bg-purple-50 rounded-xl">
+                        <div className="w-8 h-8 bg-purple-500 rounded-full flex items-center justify-center text-white text-sm font-bold">
+                          🎯
+                        </div>
+                        <div>
+                          <p className="font-medium text-black">Goal Achiever</p>
+                          <p className="text-sm text-gray-600">First goal completed!</p>
+                        </div>
+                      </div>
+                    )}
+                    
+                    {/* Empty state */}
+                    {(mentorshipStats?.total_sessions_completed || 0) === 0 && (
+                      <div className="text-center py-8">
+                        <div className="text-6xl mb-4">🏅</div>
+                        <h3 className="text-lg font-medium text-black mb-2">Your Journey Starts Here</h3>
+                        <p className="text-gray-600">Complete sessions and achieve goals to unlock milestones!</p>
+                      </div>
+                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -914,6 +1090,7 @@ const Dashboard = () => {
                             currentDate.getFullYear() === today.getFullYear();
                           const hasStream = isCurrentMonth && hasStreamOnDate(dayNumber);
                           const hasNote = isCurrentMonth && hasNoteOnDate(dayNumber);
+                          const hasSession = isCurrentMonth && hasSessionOnDate(dayNumber);
                           const isSelected = selectedDate && isCurrentMonth &&
                             dayNumber === selectedDate.getDate() &&
                             currentDate.getMonth() === selectedDate.getMonth() &&
@@ -926,25 +1103,31 @@ const Dashboard = () => {
                                 !isCurrentMonth 
                                   ? 'text-gray-300 border-transparent cursor-default' 
                                   : isSelected
-                                    ? 'bg-blue-500 text-white border-blue-500 ring-2 ring-blue-200'
+                                    ? 'bg-black text-white border-black ring-2 ring-gray-200'
                                     : isToday 
                                       ? 'bg-black text-white border-black' 
+                                      : hasSession
+                                        ? 'bg-gray-50 border-gray-200 text-black hover:bg-gray-100'
                                       : hasStream 
                                         ? 'bg-red-50 border-red-200 text-black hover:bg-red-100' 
                                         : hasNote
-                                          ? 'bg-green-50 border-green-200 text-black hover:bg-green-100'
+                                          ? 'bg-gray-50 border-gray-200 text-black hover:bg-gray-100'
                                           : 'border-gray-100 hover:border-gray-300 hover:bg-gray-50'
                               }`}
                               onClick={() => isCurrentMonth && selectDate(dayNumber)}
                             >
                               {isCurrentMonth && dayNumber}
+                              {/* Session indicator (highest priority) */}
+                              {hasSession && isCurrentMonth && (
+                                <div className="absolute -top-1 -right-1 w-3 h-3 bg-black rounded-full"></div>
+                              )}
                               {/* Stream indicator */}
-                              {hasStream && isCurrentMonth && (
+                              {hasStream && isCurrentMonth && !hasSession && (
                                 <div className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full"></div>
                               )}
                               {/* Note indicator */}
-                              {hasNote && isCurrentMonth && !hasStream && (
-                                <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full"></div>
+                              {hasNote && isCurrentMonth && !hasSession && !hasStream && (
+                                <div className="absolute -top-1 -right-1 w-3 h-3 bg-gray-600 rounded-full"></div>
                               )}
                             </div>
                           );
@@ -959,17 +1142,18 @@ const Dashboard = () => {
                         <span>Today</span>
                       </div>
                       <div className="flex items-center space-x-2">
+                        <div className="w-3 h-3 bg-black rounded-full"></div>
+                        <span>Mentorship Session</span>
+                      </div>
+                      <div className="flex items-center space-x-2">
                         <div className="w-3 h-3 bg-red-500 rounded-full"></div>
                         <span>Live Stream</span>
                       </div>
                       <div className="flex items-center space-x-2">
-                        <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                        <div className="w-3 h-3 bg-gray-600 rounded-full"></div>
                         <span>Has Note</span>
                       </div>
-                      <div className="flex items-center space-x-2">
-                        <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
-                        <span>Selected</span>
-                      </div>
+
                     </div>
                   </CardContent>
                 </Card>
@@ -1018,6 +1202,53 @@ const Dashboard = () => {
                               <Button size="sm" className="bg-black text-white hover:bg-gray-800 rounded-full mt-3">
                                 {streamOnDate.type === 'live' ? 'Join Stream' : 'Set Reminder'}
                               </Button>
+                            </div>
+                          );
+                        }
+                        return null;
+                      })()}
+
+                      {/* Sessions on selected date */}
+                      {(() => {
+                        const sessionsOnDate = getSessionsForDate(selectedDate.getDate());
+                        
+                        if (sessionsOnDate.length > 0) {
+                          return (
+                            <div className="space-y-3">
+                              <h4 className="font-semibold text-black">🎯 Mentorship Sessions</h4>
+                              {sessionsOnDate.map((session: any) => {
+                                const sessionTime = new Date(session.scheduled_at);
+                                return (
+                                  <div key={session.id} className="p-4 bg-gray-50 border border-gray-200 rounded-2xl">
+                                    <div className="flex items-center space-x-3 mb-2">
+                                      <span className="text-2xl">📞</span>
+                                      <div>
+                                        <h4 className="font-semibold text-black">{session.title}</h4>
+                                        <p className="text-gray-600 text-sm">
+                                          {sessionTime.toLocaleTimeString('en-US', { 
+                                            hour: 'numeric', 
+                                            minute: '2-digit',
+                                            hour12: true 
+                                          })} • {session.duration_minutes} min
+                                        </p>
+                                      </div>
+                                    </div>
+                                    {session.description && (
+                                      <p className="text-gray-700 text-sm mb-3">{session.description}</p>
+                                    )}
+                                    <Badge variant="outline" className="text-xs">
+                                      {session.status === 'scheduled' ? '📅 Scheduled' : 
+                                       session.status === 'completed' ? '✅ Completed' : 
+                                       session.status === 'cancelled' ? '❌ Cancelled' : session.status}
+                                    </Badge>
+                                    {session.meeting_link && (
+                                      <Button size="sm" className="bg-black text-white hover:bg-gray-800 rounded-full mt-3 ml-2">
+                                        Join Session
+                                      </Button>
+                                    )}
+                                  </div>
+                                );
+                              })}
                             </div>
                           );
                         }
@@ -1126,8 +1357,8 @@ const Dashboard = () => {
                         <div className="flex items-center space-x-4">
                           <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${
                             stream.color === 'red' ? 'bg-red-100' : 
-                            stream.color === 'blue' ? 'bg-blue-100' : 
-                            'bg-green-100'
+                                                                    stream.color === 'blue' ? 'bg-gray-100' :
+                                        'bg-gray-100'
                           }`}>
                             <span className="text-2xl">{stream.emoji}</span>
                           </div>
@@ -1148,8 +1379,8 @@ const Dashboard = () => {
                             variant="outline" 
                             className={`rounded-full ${
                               stream.color === 'red' ? 'border-red-200 text-red-600 bg-red-50' :
-                              stream.color === 'blue' ? 'border-blue-200 text-blue-600 bg-blue-50' :
-                              'border-green-200 text-green-600 bg-green-50'
+                                                                    stream.color === 'blue' ? 'border-gray-200 text-black bg-gray-50' :
+                                      'border-gray-200 text-black bg-gray-50'
                             }`}
                           >
                             {stream.type === 'live' ? '🔴 Live' : '📅 Scheduled'}
@@ -1200,6 +1431,8 @@ const Dashboard = () => {
           </TabsContent>
         </Tabs>
       </div>
+
+
     </div>
   );
 };
