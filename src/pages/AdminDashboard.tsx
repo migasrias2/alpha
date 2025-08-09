@@ -1,7 +1,9 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -34,6 +36,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { db } from "@/lib/supabase";
 import { AdminChatInterface } from "@/components/AdminChatInterface";
+import AdminSessionWizard from "@/components/AdminSessionWizard";
+import { supabase } from "@/lib/supabase";
 
 
 interface User {
@@ -55,6 +59,9 @@ interface Session {
   status: string;
   student_id: string;
   admin_id: string;
+  notes?: string;
+  created_at?: string;
+  updated_at?: string;
   student?: User;
   admin?: User;
 }
@@ -74,7 +81,7 @@ interface Document {
 
 const AdminDashboard = () => {
   const navigate = useNavigate();
-  const { user, signOut, isAdmin } = useAuth();
+  const { user, signOut, isAdmin, checkAdminStatus } = useAuth();
   const { toast } = useToast();
   const [selectedTab, setSelectedTab] = useState("overview");
   const [loading, setLoading] = useState(true);
@@ -87,6 +94,11 @@ const AdminDashboard = () => {
   // State for sessions
   const [sessions, setSessions] = useState<Session[]>([]);
   const [allSessions, setAllSessions] = useState<Session[]>([]);
+  const upcomingSessionsCount = useMemo(() => {
+    return allSessions.filter(
+      (s) => new Date(s.scheduled_at) > new Date() && s.status === 'scheduled'
+    ).length;
+  }, [allSessions]);
   
   // State for documents
   const [documents, setDocuments] = useState<Document[]>([]);
@@ -108,6 +120,10 @@ const AdminDashboard = () => {
   const [editingNotes, setEditingNotes] = useState<string | null>(null);
   const [noteText, setNoteText] = useState("");
   const [savingNote, setSavingNote] = useState(false);
+  const [isWizardOpen, setIsWizardOpen] = useState(false);
+  const [activeSession, setActiveSession] = useState<Session | null>(null);
+  const [isDetailsOpen, setIsDetailsOpen] = useState(false);
+  const [isActing, setIsActing] = useState(false);
 
   // Calendar helper functions
   const getDaysInMonth = (date: Date) => {
@@ -157,38 +173,55 @@ const AdminDashboard = () => {
 
   // Redirect if not admin
   useEffect(() => {
-    console.log('AdminDashboard useEffect:', { user: !!user, isAdmin, loading });
-    
     if (!user && !loading) {
+      setLoading(false);
       navigate('/login');
       return;
     }
-    
+
     if (user && !loading && !isAdmin) {
+      setLoading(false);
       navigate('/dashboard');
-      return;
     }
-  }, [user, loading, navigate, isAdmin]);
+  }, [user, loading, isAdmin, navigate]);
 
   // Load admin data
   useEffect(() => {
     const loadAdminData = async () => {
-      if (!user || !isAdmin) return;
+      if (!user || !isAdmin) {
+        console.log('AdminDashboard: User not ready or not admin', { user: !!user, isAdmin });
+        return;
+      }
+
+      console.log('AdminDashboard: Loading admin data for user:', user.email);
 
       try {
         // Load all users
-        const { data: usersData } = await db.getAllUsers();
-        setUsers(usersData || []);
-        setFilteredUsers(usersData || []);
+        console.log('Loading users...');
+        const usersResult = await db.getAllUsers();
+        const userList = usersResult.data || [];
+        console.log('Users result:', usersResult);
+        setUsers(userList);
+        setFilteredUsers(userList);
 
         // Load all sessions
-        const { data: sessionsData } = await db.getAllSessions();
-        setSessions(sessionsData || []);
-        setAllSessions(sessionsData || []);
+        console.log('Loading sessions...');
+        const sessionsResult = await db.getAllSessions();
+        console.log('Sessions result:', sessionsResult);
+        // Enrich with profile details for display (student/admin from profiles list)
+        const sessionsEnriched = (sessionsResult.data || []).map((s: any) => ({
+          ...s,
+          student: userList.find(u => u.id === s.student_id),
+          admin: userList.find(u => u.id === s.admin_id),
+        }));
+        setSessions(sessionsEnriched);
+        setAllSessions(sessionsEnriched);
 
         // Load all documents
-        const { data: documentsData } = await db.getAllDocuments();
-        setDocuments(documentsData || []);
+        console.log('Loading documents...');
+        const documentsResult = await db.getAllDocuments();
+        console.log('Documents result:', documentsResult);
+        setDocuments(documentsResult.data || []);
 
       } catch (error) {
         console.error('Error loading admin data:', error);
@@ -203,6 +236,32 @@ const AdminDashboard = () => {
     };
 
     loadAdminData();
+  }, [user, isAdmin]);
+
+  // Realtime: listen for mentorship_sessions changes to keep calendar in sync
+  useEffect(() => {
+    if (!user || !isAdmin) return;
+    const channel = supabase
+      .channel('admin-mentorship-sessions')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'mentorship_sessions' },
+        async () => {
+          const { data: sessionsData } = await db.getAllSessions();
+          const sessionsEnriched = (sessionsData || []).map((s: any) => ({
+            ...s,
+            student: users.find(u => u.id === s.student_id),
+            admin: users.find(u => u.id === s.admin_id),
+          }));
+          setSessions(sessionsEnriched);
+          setAllSessions(sessionsEnriched);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [user, isAdmin]);
 
   // Filter users based on search
@@ -237,6 +296,12 @@ const AdminDashboard = () => {
   };
 
 
+
+  // Open the booking wizard from the Users list
+  const handleBookSession = (_selectedUser: User) => {
+    // For now we only open the wizard. We can prefill the user later if desired.
+    setIsWizardOpen(true);
+  };
 
   const handleCreateDocument = async () => {
     if (!documentForm.title.trim()) {
@@ -325,10 +390,111 @@ const AdminDashboard = () => {
   const totalUsers = users.length;
   const regularUsers = users.filter(u => u.role !== 'admin').length;
   const totalSessions = allSessions.length;
-  const upcomingSessions = allSessions.filter(s => new Date(s.scheduled_at) > new Date() && s.status === 'scheduled').length;
 
   return (
     <div className="min-h-screen bg-gray-50">
+      {/* Session Details Dialog */}
+      <Dialog open={isDetailsOpen} onOpenChange={setIsDetailsOpen}>
+        <DialogContent className="sm:max-w-[520px]">
+          <DialogHeader>
+            <DialogTitle>Session Details</DialogTitle>
+          </DialogHeader>
+          {activeSession && (
+            <div className="space-y-4">
+              <div>
+                <p className="text-sm text-gray-500">Title</p>
+                <p className="font-medium">{activeSession.title}</p>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <p className="text-sm text-gray-500">Student</p>
+                  <p className="font-medium">{activeSession.student?.first_name || activeSession.student?.email}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Admin</p>
+                  <p className="font-medium">{activeSession.admin?.first_name || activeSession.admin?.email}</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <p className="text-sm text-gray-500">Date</p>
+                  <p className="font-medium">{new Date(activeSession.scheduled_at).toLocaleString()}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Duration</p>
+                  <p className="font-medium">{activeSession.duration_minutes} min</p>
+                </div>
+              </div>
+              {activeSession.description && (
+                <div>
+                  <p className="text-sm text-gray-500">Description</p>
+                  <p className="text-sm text-gray-700">{activeSession.description}</p>
+                </div>
+              )}
+
+              {/* Reschedule */}
+              <div className="border-t pt-3">
+                <Label htmlFor="newDate" className="text-sm">Reschedule</Label>
+                <div className="flex gap-2 mt-2">
+                  <Input id="newDate" type="datetime-local" className="flex-1" onChange={(e) => (window as any)._reschedAt = e.target.value} />
+                  <Button
+                    disabled={isActing}
+                    onClick={async () => {
+                      if (!(window as any)._reschedAt) return;
+                      setIsActing(true);
+                      const { data, error } = await db.rescheduleSession(activeSession.id, new Date((window as any)._reschedAt).toISOString());
+                      setIsActing(false);
+                      if (!error && data) {
+                        const updateLocal = (s: Session) => s.id === activeSession.id ? { ...s, ...data } : s;
+                        setAllSessions(prev => prev.map(updateLocal));
+                        setSessions(prev => prev.map(updateLocal));
+                        setActiveSession(prev => prev ? { ...prev, ...data } as Session : prev);
+                        toast({ title: 'Session rescheduled', description: 'The session date was updated.' });
+                      } else {
+                        toast({ title: 'Failed to reschedule', description: 'Try again later.', variant: 'destructive' });
+                      }
+                    }}
+                    className="bg-black text-white hover:bg-gray-800"
+                  >
+                    Save
+                  </Button>
+                </div>
+              </div>
+
+              {/* Cancel */}
+              <div className="border-t pt-3 flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-gray-500">Cancel session</p>
+                  <p className="text-xs text-gray-500">Marks this session as canceled</p>
+                </div>
+                <Button
+                  variant="outline"
+                  disabled={isActing || activeSession.status === 'canceled' || activeSession.status === 'cancelled'}
+                  onClick={async () => {
+                    setIsActing(true);
+                    const { data, error } = await db.cancelSession(activeSession.id);
+                    setIsActing(false);
+                    if (!error && data) {
+                      const updateLocal = (s: Session) => s.id === activeSession.id ? { ...s, ...data } : s;
+                      setAllSessions(prev => prev.map(updateLocal));
+                      setSessions(prev => prev.map(updateLocal));
+                      setActiveSession(prev => prev ? { ...prev, ...data } as Session : prev);
+                      toast({ title: 'Session canceled', description: 'The session was marked as canceled.' });
+                    } else {
+                      toast({ title: 'Failed to cancel', description: 'Try again later.', variant: 'destructive' });
+                    }
+                  }}
+                >
+                  Cancel session
+                </Button>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setIsDetailsOpen(false)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       {/* Header */}
       <div className="relative z-20 sticky top-0">
         <div className="container mx-auto px-6 py-6">
@@ -387,7 +553,7 @@ const AdminDashboard = () => {
               { label: "Total Users", value: totalUsers, emoji: "👥", color: "text-black" },
               { label: "Regular Users", value: regularUsers, emoji: "🧑‍💼", color: "text-black" },
               { label: "Total Sessions", value: totalSessions, emoji: "📅", color: "text-black" },
-              { label: "Upcoming Sessions", value: upcomingSessions, emoji: "⏰", color: "text-black" }
+              { label: "Upcoming Sessions", value: upcomingSessionsCount, emoji: "⏰", color: "text-black" }
             ].map((stat, index) => (
               <motion.div
                 key={index}
@@ -489,7 +655,7 @@ const AdminDashboard = () => {
                           .map((session, index) => (
                         <div key={session.id} className="flex items-center space-x-4 p-4 border border-gray-100 rounded-xl">
                           <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
-                            <Video className="h-6 w-6 text-blue-600" />
+              <Video className="h-6 w-6 text-black" />
                           </div>
                           <div className="flex-1">
                             <h4 className="font-medium text-black">{session.title}</h4>
@@ -504,13 +670,13 @@ const AdminDashboard = () => {
                           <div className="flex items-center space-x-2">
                             {/* Show "NEW" badge if session was created recently (within last hour) */}
                             {session.created_at && new Date().getTime() - new Date(session.created_at).getTime() < 3600000 && (
-                              <Badge className="bg-blue-500 text-white rounded-full text-xs">
+              <Badge className="bg-black text-white rounded-full text-xs">
                                 NEW
                               </Badge>
                             )}
                             <Badge variant="outline" className={`rounded-full ${
                               session.status === 'scheduled' ? 'border-green-200 text-green-600 bg-green-50' :
-                              session.status === 'completed' ? 'border-blue-200 text-blue-600 bg-blue-50' :
+                session.status === 'completed' ? 'border-gray-300 text-black bg-gray-50' :
                               'border-red-200 text-red-600 bg-red-50'
                             }`}>
                               {session.status}
@@ -633,7 +799,7 @@ const AdminDashboard = () => {
                             <Badge variant="outline" className={`rounded-full text-xs ${
                               user.role === 'admin' 
                                 ? 'border-red-200 text-red-600 bg-red-50' 
-                                : 'border-blue-200 text-blue-600 bg-blue-50'
+              : 'border-gray-300 text-black bg-gray-50'
                             }`}>
                               {user.role}
                             </Badge>
@@ -803,7 +969,7 @@ const AdminDashboard = () => {
                           <Badge variant="outline" className={`rounded-full flex-shrink-0 ${
                             doc.is_public 
                               ? 'border-green-200 text-green-600 bg-green-50' 
-                              : 'border-blue-200 text-blue-600 bg-blue-50'
+              : 'border-gray-300 text-black bg-gray-50'
                           }`}>
                             {doc.is_public ? 'Public' : 'Private'}
                           </Badge>
@@ -831,303 +997,340 @@ const AdminDashboard = () => {
 
           {/* Calendar Tab */}
           {selectedTab === "calendar" && (
-            <div className="space-y-6">
-              <div className="grid lg:grid-cols-3 gap-6">
-                {/* Calendar View */}
-                <div className="lg:col-span-2">
+            <>
+              <div className="space-y-6">
+                <div className="grid lg:grid-cols-3 gap-6">
+                  {/* Calendar View */}
+                  <div className="lg:col-span-2">
+                    <Card className="border-0 bg-white rounded-2xl shadow-lg">
+                      <CardHeader className="pb-4">
+                        <CardTitle className="flex items-center text-black text-xl">
+                          📅 Session Calendar
+                        </CardTitle>
+                        <CardDescription className="text-gray-600">
+                          View all mentorship sessions across users
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        {/* Calendar Header */}
+                        <div className="flex items-center justify-between mb-6">
+                          <h2 className="text-2xl font-bold text-black">
+                            {currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                          </h2>
+                          <div className="flex items-center space-x-2">
+                            <Button 
+                              variant="outline" 
+                              size="sm" 
+                              className="rounded-full border-black/20 hover:bg-gray-50"
+                              onClick={() => navigateMonth('prev')}
+                            >
+                              ← Prev
+                            </Button>
+                            <Button 
+                              variant="outline" 
+                              size="sm" 
+                              className="rounded-full border-black/20 hover:bg-gray-50"
+                              onClick={() => navigateMonth('next')}
+                            >
+                              Next →
+                            </Button>
+                            <Button
+                              size="sm"
+                              className="rounded-full bg-black text-white hover:bg-gray-800"
+                              onClick={() => setIsWizardOpen(true)}
+                            >
+                              + Book session
+                            </Button>
+                          </div>
+                        </div>
+
+                        {/* Calendar Grid */}
+                        <div className="grid grid-cols-7 gap-2 mb-4">
+                          {/* Day Headers */}
+                          {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
+                            <div key={day} className="p-3 text-center text-sm font-medium text-gray-600">
+                              {day}
+                            </div>
+                          ))}
+
+                          {/* Calendar Days */}
+                          {(() => {
+                            const daysInMonth = getDaysInMonth(currentDate);
+                            const firstDay = getFirstDayOfMonth(currentDate);
+                            const totalCells = 42; // 6 weeks * 7 days
+                            const today = new Date();
+                            
+                            return Array.from({ length: totalCells }, (_, i) => {
+                              const dayNumber = i - firstDay + 1;
+                              const isCurrentMonth = dayNumber > 0 && dayNumber <= daysInMonth;
+                              const isToday = isCurrentMonth && 
+                                dayNumber === today.getDate() && 
+                                currentDate.getMonth() === today.getMonth() && 
+                                currentDate.getFullYear() === today.getFullYear();
+                              const hasSession = isCurrentMonth && hasSessionOnDate(dayNumber);
+                              const isSelected = selectedDate && isCurrentMonth &&
+                                dayNumber === selectedDate.getDate() &&
+                                currentDate.getMonth() === selectedDate.getMonth() &&
+                                currentDate.getFullYear() === selectedDate.getFullYear();
+                              
+                              return (
+                                <div 
+                                  key={i} 
+                                  className={`relative p-3 text-center text-sm rounded-xl border transition-all cursor-pointer ${
+                                    !isCurrentMonth 
+                                      ? 'text-gray-300 border-transparent cursor-default' 
+                                      : isSelected
+              ? 'bg-black text-white border-black ring-2 ring-gray-200'
+                                        : isToday 
+                                          ? 'bg-black text-white border-black' 
+                                          : hasSession
+              ? 'bg-gray-50 border-gray-300 text-black hover:bg-gray-100'
+                                            : 'border-gray-100 hover:border-gray-300 hover:bg-gray-50'
+                                  }`}
+                                  onClick={() => isCurrentMonth && selectDate(dayNumber)}
+                                >
+                                  {isCurrentMonth && dayNumber}
+                                  {isToday && (
+                                    <div className="absolute inset-x-0 bottom-1 text-[10px] leading-none text-white/90">
+                                      today
+                                    </div>
+                                  )}
+                                  {/* Session indicator */}
+                                  {hasSession && isCurrentMonth && (
+              <div className="absolute -top-1 -right-1 w-3 h-3 bg-black rounded-full"></div>
+                                  )}
+                                </div>
+                              );
+                            });
+                          })()}
+                        </div>
+
+                        {/* Legend */}
+                        <div className="flex flex-wrap gap-4 text-xs text-gray-600 justify-center">
+                          <div className="flex items-center space-x-2">
+                            <div className="w-3 h-3 bg-black rounded-full"></div>
+                            <span>Today</span>
+                          </div>
+                          <div className="flex items-center space-x-2">
+              <div className="w-3 h-3 bg-black rounded-full"></div>
+                            <span>Has Sessions</span>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </div>
+
+                  {/* Selected Date Details */}
                   <Card className="border-0 bg-white rounded-2xl shadow-lg">
                     <CardHeader className="pb-4">
                       <CardTitle className="flex items-center text-black text-xl">
-                        📅 Session Calendar
+                        📋 Session Details
                       </CardTitle>
                       <CardDescription className="text-gray-600">
-                        View all mentorship sessions across users
+                        {selectedDate 
+                          ? `Selected: ${selectedDate.toLocaleDateString('en-US', { 
+                              weekday: 'long', 
+                              year: 'numeric', 
+                              month: 'long', 
+                              day: 'numeric' 
+                            })}`
+                          : 'Select a date to view sessions'
+                        }
                       </CardDescription>
                     </CardHeader>
-                    <CardContent>
-                      {/* Calendar Header */}
-                      <div className="flex items-center justify-between mb-6">
-                        <h2 className="text-2xl font-bold text-black">
-                          {currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
-                        </h2>
-                        <div className="flex items-center space-x-2">
-                          <Button 
-                            variant="outline" 
-                            size="sm" 
-                            className="rounded-full border-black/20 hover:bg-gray-50"
-                            onClick={() => navigateMonth('prev')}
-                          >
-                            ← Prev
-                          </Button>
-                          <Button 
-                            variant="outline" 
-                            size="sm" 
-                            className="rounded-full border-black/20 hover:bg-gray-50"
-                            onClick={() => navigateMonth('next')}
-                          >
-                            Next →
-                          </Button>
-                        </div>
-                      </div>
-
-                      {/* Calendar Grid */}
-                      <div className="grid grid-cols-7 gap-2 mb-4">
-                        {/* Day Headers */}
-                        {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
-                          <div key={day} className="p-3 text-center text-sm font-medium text-gray-600">
-                            {day}
-                          </div>
-                        ))}
-
-                        {/* Calendar Days */}
-                        {(() => {
-                          const daysInMonth = getDaysInMonth(currentDate);
-                          const firstDay = getFirstDayOfMonth(currentDate);
-                          const totalCells = 42; // 6 weeks * 7 days
-                          const today = new Date();
-                          
-                          return Array.from({ length: totalCells }, (_, i) => {
-                            const dayNumber = i - firstDay + 1;
-                            const isCurrentMonth = dayNumber > 0 && dayNumber <= daysInMonth;
-                            const isToday = isCurrentMonth && 
-                              dayNumber === today.getDate() && 
-                              currentDate.getMonth() === today.getMonth() && 
-                              currentDate.getFullYear() === today.getFullYear();
-                            const hasSession = isCurrentMonth && hasSessionOnDate(dayNumber);
-                            const isSelected = selectedDate && isCurrentMonth &&
-                              dayNumber === selectedDate.getDate() &&
-                              currentDate.getMonth() === selectedDate.getMonth() &&
-                              currentDate.getFullYear() === selectedDate.getFullYear();
+                    <CardContent className="space-y-4">
+                      {selectedDate ? (
+                        <>
+                          {/* Sessions on selected date */}
+                          {(() => {
+                            const sessionsOnDate = getSessionsForDate(selectedDate.getDate());
                             
-                            return (
-                              <div 
-                                key={i} 
-                                className={`relative p-3 text-center text-sm rounded-xl border transition-all cursor-pointer ${
-                                  !isCurrentMonth 
-                                    ? 'text-gray-300 border-transparent cursor-default' 
-                                    : isSelected
-                                      ? 'bg-blue-500 text-white border-blue-500 ring-2 ring-blue-200'
-                                      : isToday 
-                                        ? 'bg-black text-white border-black' 
-                                        : hasSession
-                                          ? 'bg-blue-50 border-blue-200 text-black hover:bg-blue-100'
-                                          : 'border-gray-100 hover:border-gray-300 hover:bg-gray-50'
-                                }`}
-                                onClick={() => isCurrentMonth && selectDate(dayNumber)}
-                              >
-                                {isCurrentMonth && dayNumber}
-                                {/* Session indicator */}
-                                {hasSession && isCurrentMonth && (
-                                  <div className="absolute -top-1 -right-1 w-3 h-3 bg-blue-500 rounded-full"></div>
-                                )}
-                              </div>
-                            );
-                          });
-                        })()}
-                      </div>
-
-                      {/* Legend */}
-                      <div className="flex flex-wrap gap-4 text-xs text-gray-600 justify-center">
-                        <div className="flex items-center space-x-2">
-                          <div className="w-3 h-3 bg-black rounded-full"></div>
-                          <span>Today</span>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                          <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
-                          <span>Has Sessions</span>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </div>
-
-                {/* Selected Date Details */}
-                <Card className="border-0 bg-white rounded-2xl shadow-lg">
-                  <CardHeader className="pb-4">
-                    <CardTitle className="flex items-center text-black text-xl">
-                      📋 Session Details
-                    </CardTitle>
-                    <CardDescription className="text-gray-600">
-                      {selectedDate 
-                        ? `Selected: ${selectedDate.toLocaleDateString('en-US', { 
-                            weekday: 'long', 
-                            year: 'numeric', 
-                            month: 'long', 
-                            day: 'numeric' 
-                          })}`
-                        : 'Select a date to view sessions'
-                      }
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    {selectedDate ? (
-                      <>
-                        {/* Sessions on selected date */}
-                        {(() => {
-                          const sessionsOnDate = getSessionsForDate(selectedDate.getDate());
-                          
-                          if (sessionsOnDate.length > 0) {
-                            return (
-                              <div className="space-y-3">
-                                <h4 className="font-semibold text-black">📞 Sessions</h4>
-                                {sessionsOnDate.map((session: Session) => {
-                                  const sessionTime = new Date(session.scheduled_at);
-                                  return (
-                                    <div key={session.id} className="p-4 bg-blue-50 border border-blue-200 rounded-2xl">
-                                      <div className="flex items-center space-x-3 mb-2">
-                                        <span className="text-2xl">🎯</span>
-                                        <div className="flex-1">
-                                          <h4 className="font-semibold text-black">{session.title}</h4>
-                                          <p className="text-gray-600 text-sm">
-                                            {sessionTime.toLocaleTimeString('en-US', { 
-                                              hour: 'numeric', 
-                                              minute: '2-digit',
-                                              hour12: true 
-                                            })} • {session.duration_minutes} min
-                                          </p>
-                                          <p className="text-gray-600 text-sm">
-                                            Student: {session.student?.first_name || session.student?.email}
-                                          </p>
+                            if (sessionsOnDate.length > 0) {
+                              return (
+                                <div className="space-y-3">
+                                  <h4 className="font-semibold text-black">📞 Sessions</h4>
+                                  {sessionsOnDate.map((session: Session) => {
+                                    const sessionTime = new Date(session.scheduled_at);
+                                    return (
+              <div key={session.id} className="p-4 bg-gray-50 border border-gray-200 rounded-2xl">
+                                        <div className="flex items-center space-x-3 mb-2">
+                                          <span className="text-2xl">🎯</span>
+                                          <div className="flex-1">
+                                            <h4 className="font-semibold text-black">{session.title}</h4>
+                                            <p className="text-gray-600 text-sm">
+                                              {sessionTime.toLocaleTimeString('en-US', { 
+                                                hour: 'numeric', 
+                                                minute: '2-digit',
+                                                hour12: true 
+                                              })} • {session.duration_minutes} min
+                                            </p>
+                                            <p className="text-gray-600 text-sm">
+                                              Student: {session.student?.first_name || session.student?.email}
+                                            </p>
+                                          </div>
                                         </div>
-                                      </div>
-                                      {session.description && (
-                                        <p className="text-gray-700 text-sm mb-3">{session.description}</p>
-                                      )}
-                                      <div className="flex items-center space-x-2 mb-3">
-                                        <Badge variant="outline" className="text-xs">
-                                          {session.status === 'scheduled' ? '📅 Scheduled' : 
-                                           session.status === 'completed' ? '✅ Completed' : 
-                                           session.status === 'cancelled' ? '❌ Cancelled' : session.status}
-                                        </Badge>
-                                      </div>
-                                      
-                                      {/* Session Notes */}
-                                      <div className="mt-3 pt-3 border-t border-blue-200">
-                                        <div className="flex items-center justify-between mb-2">
-                                          <h5 className="text-sm font-medium text-black">📝 Session Notes</h5>
-                                          {editingNotes !== session.id && (
-                                            <Button 
-                                              size="sm" 
-                                              variant="outline" 
-                                              className="border-blue-200 text-blue-600 hover:bg-blue-50 rounded-full text-xs"
-                                              onClick={() => {
-                                                setEditingNotes(session.id);
-                                                setNoteText(session.notes || '');
-                                              }}
-                                            >
-                                              {session.notes ? 'Edit' : 'Add Note'}
-                                            </Button>
-                                          )}
+                                        {session.description && (
+                                          <p className="text-gray-700 text-sm mb-3">{session.description}</p>
+                                        )}
+                                        <div className="flex items-center space-x-2 mb-3">
+                                          <Badge variant="outline" className="text-xs">
+                                              {session.status === 'scheduled' ? '📅 Scheduled' : 
+                                             session.status === 'completed' ? '✅ Completed' : 
+                                             session.status === 'canceled' || session.status === 'cancelled' ? '❌ Canceled' : session.status}
+                                          </Badge>
+                                          <Button
+                                            size="sm"
+                                            variant="outline"
+                                            className="text-xs rounded-full"
+                                            onClick={() => { setActiveSession(session); setIsDetailsOpen(true); }}
+                                          >
+                                            View
+                                          </Button>
                                         </div>
                                         
-                                        {editingNotes === session.id ? (
-                                          <div className="space-y-2">
-                                            <Textarea
-                                              value={noteText}
-                                              onChange={(e) => setNoteText(e.target.value)}
-                                              placeholder="Add session notes..."
-                                              className="w-full text-sm"
-                                              rows={3}
-                                            />
-                                            <div className="flex space-x-2">
+                                        {/* Session Notes */}
+              <div className="mt-3 pt-3 border-t border-gray-200">
+                                          <div className="flex items-center justify-between mb-2">
+                                            <h5 className="text-sm font-medium text-black">📝 Session Notes</h5>
+                                            {editingNotes !== session.id && (
                                               <Button 
                                                 size="sm" 
-                                                className="bg-black text-white hover:bg-gray-800 rounded-full text-xs"
-                                                onClick={async () => {
-                                                  setSavingNote(true);
-                                                  try {
-                                                    const { error } = await db.updateSessionNotes(session.id, noteText);
-                                                    
-                                                    if (error) {
+                                                variant="outline" 
+              className="border-gray-300 text-black hover:bg-gray-50 rounded-full text-xs"
+                                                onClick={() => {
+                                                  setEditingNotes(session.id);
+                                                  setNoteText(session.notes || '');
+                                                }}
+                                              >
+                                                {session.notes ? 'Edit' : 'Add Note'}
+                                              </Button>
+                                            )}
+                                          </div>
+                                          
+                                          {editingNotes === session.id ? (
+                                            <div className="space-y-2">
+                                              <Textarea
+                                                value={noteText}
+                                                onChange={(e) => setNoteText(e.target.value)}
+                                                placeholder="Add session notes..."
+                                                className="w-full text-sm"
+                                                rows={3}
+                                              />
+                                              <div className="flex space-x-2">
+                                                <Button 
+                                                  size="sm" 
+                                                  className="bg-black text-white hover:bg-gray-800 rounded-full text-xs"
+                                                  onClick={async () => {
+                                                    setSavingNote(true);
+                                                    try {
+                                                      const { error } = await db.updateSessionNotes(session.id, noteText);
+                                                      
+                                                      if (error) {
+                                                        console.error('Error saving session notes:', error);
+                                                        toast({
+                                                          title: "Error saving notes ❌",
+                                                          description: "Failed to save session notes. Please try again.",
+                                                          variant: "destructive",
+                                                        });
+                                                        return;
+                                                      }
+
+                                                      // Update local session data
+                                                      setAllSessions(prev => prev.map(s => 
+                                                        s.id === session.id ? { ...s, notes: noteText } : s
+                                                      ));
+                                                      setSessions(prev => prev.map(s => 
+                                                        s.id === session.id ? { ...s, notes: noteText } : s
+                                                      ));
+                                                      
+                                                      setEditingNotes(null);
+                                                      toast({
+                                                        title: "Notes saved! 📝",
+                                                        description: "Session notes have been updated successfully.",
+                                                      });
+                                                    } catch (error) {
                                                       console.error('Error saving session notes:', error);
                                                       toast({
                                                         title: "Error saving notes ❌",
                                                         description: "Failed to save session notes. Please try again.",
                                                         variant: "destructive",
                                                       });
-                                                      return;
+                                                    } finally {
+                                                      setSavingNote(false);
                                                     }
-
-                                                    // Update local session data
-                                                    setAllSessions(prev => prev.map(s => 
-                                                      s.id === session.id ? { ...s, notes: noteText } : s
-                                                    ));
-                                                    setSessions(prev => prev.map(s => 
-                                                      s.id === session.id ? { ...s, notes: noteText } : s
-                                                    ));
-                                                    
+                                                  }}
+                                                  disabled={savingNote}
+                                                >
+                                                  {savingNote ? 'Saving...' : 'Save'}
+                                                </Button>
+                                                <Button 
+                                                  size="sm" 
+                                                  variant="outline" 
+                                                  className="border-gray-300 text-gray-600 hover:bg-gray-50 rounded-full text-xs"
+                                                  onClick={() => {
                                                     setEditingNotes(null);
-                                                    toast({
-                                                      title: "Notes saved! 📝",
-                                                      description: "Session notes have been updated successfully.",
-                                                    });
-                                                  } catch (error) {
-                                                    console.error('Error saving session notes:', error);
-                                                    toast({
-                                                      title: "Error saving notes ❌",
-                                                      description: "Failed to save session notes. Please try again.",
-                                                      variant: "destructive",
-                                                    });
-                                                  } finally {
-                                                    setSavingNote(false);
-                                                  }
-                                                }}
-                                                disabled={savingNote}
-                                              >
-                                                {savingNote ? 'Saving...' : 'Save'}
-                                              </Button>
-                                              <Button 
-                                                size="sm" 
-                                                variant="outline" 
-                                                className="border-gray-300 text-gray-600 hover:bg-gray-50 rounded-full text-xs"
-                                                onClick={() => {
-                                                  setEditingNotes(null);
-                                                  setNoteText('');
-                                                }}
-                                                disabled={savingNote}
-                                              >
-                                                Cancel
-                                              </Button>
+                                                    setNoteText('');
+                                                  }}
+                                                  disabled={savingNote}
+                                                >
+                                                  Cancel
+                                                </Button>
+                                              </div>
                                             </div>
-                                          </div>
-                                        ) : (
-                                          <div>
-                                            {session.notes ? (
-                                              <p className="text-gray-700 text-sm bg-gray-50 p-3 rounded-lg whitespace-pre-wrap">
-                                                {session.notes}
-                                              </p>
-                                            ) : (
-                                              <p className="text-gray-500 text-sm italic">No notes added yet</p>
-                                            )}
-                                          </div>
-                                        )}
+                                          ) : (
+                                            <div>
+                                              {session.notes ? (
+                                                <p className="text-gray-700 text-sm bg-gray-50 p-3 rounded-lg whitespace-pre-wrap">
+                                                  {session.notes}
+                                                </p>
+                                              ) : (
+                                                <p className="text-gray-500 text-sm italic">No notes added yet</p>
+                                              )}
+                                            </div>
+                                          )}
+                                        </div>
                                       </div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            );
-                          } else {
-                            return (
-                              <div className="text-center py-8">
-                                <Calendar className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-                                <p className="text-gray-500">No sessions scheduled for this date</p>
-                                <p className="text-gray-400 text-sm mt-2">Students can now message you directly through the chat system</p>
-                              </div>
-                            );
-                          }
-                        })()}
-                      </>
-                    ) : (
-                      <div className="text-center py-8">
-                        <Calendar className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-                        <p className="text-gray-500">Select a date to view session details</p>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
+                                    );
+                                  })}
+                                </div>
+                              );
+                            } else {
+                              return (
+                                <div className="text-center py-8">
+                                  <Calendar className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+                                  <p className="text-gray-500">No sessions scheduled for this date</p>
+                                  <p className="text-gray-400 text-sm mt-2">Students can now message you directly through the chat system</p>
+                                </div>
+                              );
+                            }
+                          })()}
+                        </>
+                      ) : (
+                        <div className="text-center py-8">
+                          <Calendar className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+                          <p className="text-gray-500">Select a date to view session details</p>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                </div>
               </div>
-            </div>
+              <AdminSessionWizard
+                open={isWizardOpen}
+                onOpenChange={setIsWizardOpen}
+                users={users}
+                adminId={user?.id || ''}
+                onBooked={(newSession: any) => {
+                  const enriched = {
+                    ...newSession,
+                    student: users.find(u => u.id === newSession.student_id),
+                    admin: users.find(u => u.id === newSession.admin_id),
+                  };
+                  setAllSessions(prev => [enriched, ...prev]);
+                  setSessions(prev => [enriched, ...prev]);
+                }}
+              />
+            </>
           )}
         </Tabs>
       </div>

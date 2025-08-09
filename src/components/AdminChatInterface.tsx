@@ -433,7 +433,7 @@ export const AdminChatInterface: React.FC<AdminChatInterfaceProps> = ({ classNam
                         </Avatar>
                         {conversation.unread_count > 0 && (
                           <div className="absolute -top-1 -right-1">
-                            <Badge className="bg-blue-500 text-white text-xs rounded-full min-w-[22px] h-6 flex items-center justify-center p-0 border-2 border-white font-medium">
+        <Badge className="bg-black text-white text-xs rounded-full min-w-[22px] h-6 flex items-center justify-center p-0 border-2 border-white font-medium">
                               {conversation.unread_count > 9 ? '9+' : conversation.unread_count}
                             </Badge>
                           </div>

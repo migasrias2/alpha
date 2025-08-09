@@ -1,9 +1,9 @@
 import { createClient } from '@supabase/supabase-js'
 import { Session, AuthChangeEvent } from '@supabase/supabase-js';
 
-// Supabase project credentials
-const supabaseUrl = 'https://gmolljzhuzlhwbcjjyrd.supabase.co'
-const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdtb2xsanpodXpsaHdiY2pqeXJkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTExMjA0MzgsImV4cCI6MjA2NjY5NjQzOH0.VuyczDKczaMxv5fQqK2DDTvfRZ-V8uThP4p-TSKVJSM'
+// Supabase project credentials (env-first, fallback to hardcoded for local dev)
+const supabaseUrl = (import.meta as any).env?.VITE_SUPABASE_URL ?? 'https://gmolljzhuzlhwbcjjyrd.supabase.co'
+const supabaseKey = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY ?? 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdtb2xsanpodXpsaHdiY2pqeXJkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTExMjA0MzgsImV4cCI6MjA2NjY5NjQzOH0.VuyczDKczaMxv5fQqK2DDTvfRZ-V8uThP4p-TSKVJSM'
 
 export const supabase = createClient(supabaseUrl, supabaseKey)
 
@@ -96,13 +96,30 @@ export const db = {
 
   // Admin functions
   isUserAdmin: async (userId: string) => {
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('role')
-      .eq('id', userId)
-      .single()
-    
-    return { isAdmin: data?.role === 'admin', error }
+    try {
+      // First check if it's Miguel's email (hardcoded admin)
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user?.email === 'miguelfortesmartins4@gmail.com') {
+        return { isAdmin: true, error: null }
+      }
+
+      // Otherwise check the role in profiles
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', userId)
+        .single()
+      
+      if (error) {
+        console.error('Error checking admin status:', error);
+        return { isAdmin: false, error }
+      }
+      
+      return { isAdmin: data?.role === 'admin', error: null }
+    } catch (err) {
+      console.error('Error in isUserAdmin:', err);
+      return { isAdmin: false, error: err }
+    }
   },
 
   makeUserAdmin: async (userId: string) => {
@@ -113,43 +130,53 @@ export const db = {
   },
 
   getAllUsers: async () => {
-    return await supabase
+    const { data, error } = await supabase
       .from('profiles')
       .select('id, email, first_name, last_name, role, created_at, mentorship_status')
-      .order('created_at', { ascending: false })
+      .order('created_at', { ascending: false });
+    
+    if (error) {
+      console.error('Error fetching users:', error);
+      return { data: [], error };
+    }
+    
+    return { data, error: null };
   },
 
   // Sessions functions
   getAllSessions: async () => {
-    return await supabase
+    // Note: We intentionally avoid nested selects to profiles here because
+    // mentorship_sessions.student_id/admin_id reference auth.users. We'll enrich
+    // these on the client using the already-fetched profiles list.
+    const { data, error } = await supabase
       .from('mentorship_sessions')
-      .select(`
-        id,
-        title,
-        description,
-        scheduled_at,
-        duration_minutes,
-        status,
-        student_id,
-        admin_id,
-        notes,
-        created_at,
-        student:student_id(id, email, first_name, last_name),
-        admin:admin_id(id, email, first_name, last_name)
-      `)
-      .order('scheduled_at', { ascending: false })
+      .select(
+        `id, title, description, scheduled_at, duration_minutes, status, student_id, admin_id, notes, created_at, updated_at`
+      )
+      .order('scheduled_at', { ascending: false });
+    
+    if (error) {
+      console.error('Error fetching sessions:', error);
+      return { data: [], error };
+    }
+    
+    return { data, error: null };
   },
 
   createSession: async (sessionData: any) => {
     return await supabase
       .from('mentorship_sessions')
       .insert(sessionData)
+      .select('*')
+      .single()
   },
 
   createMentorshipSession: async (sessionData: any) => {
     return await supabase
       .from('mentorship_sessions')
       .insert(sessionData)
+      .select('*')
+      .single()
   },
 
   updateSessionNotes: async (sessionId: string, notes: string) => {
@@ -159,9 +186,33 @@ export const db = {
       .eq('id', sessionId)
   },
 
+  // Cancel a session
+  cancelSession: async (sessionId: string) => {
+    const { data, error } = await supabase
+      .from('mentorship_sessions')
+      .update({ status: 'canceled', updated_at: new Date().toISOString() })
+      .eq('id', sessionId)
+      .select('*')
+      .single()
+    return { data, error }
+  },
+
+  // Reschedule a session
+  rescheduleSession: async (sessionId: string, newDateISO: string, newDuration?: number) => {
+    const updates: any = { scheduled_at: newDateISO, updated_at: new Date().toISOString() }
+    if (typeof newDuration === 'number') updates.duration_minutes = newDuration
+    const { data, error } = await supabase
+      .from('mentorship_sessions')
+      .update(updates)
+      .eq('id', sessionId)
+      .select('*')
+      .single()
+    return { data, error }
+  },
+
   // Documents functions
   getAllDocuments: async () => {
-    return await supabase
+    const { data, error } = await supabase
       .from('documents')
       .select(`
         id,
@@ -176,7 +227,14 @@ export const db = {
         created_at,
         shared_with:shared_with_user_id(id, email, first_name, last_name)
       `)
-      .order('created_at', { ascending: false })
+      .order('created_at', { ascending: false });
+    
+    if (error) {
+      console.error('Error fetching documents:', error);
+      return { data: [], error };
+    }
+    
+    return { data, error: null };
   },
 
   createDocument: async (documentData: any) => {
@@ -246,17 +304,13 @@ export const db = {
 
   // Get admin user ID (Miguel's ID) for chat functionality
   getAdminUserId: async () => {
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('id')
-      .eq('email', 'miguelfortesmartins4@gmail.com')
-      .single()
-    
+    // Prefer RPC to avoid RLS issues and speed up lookup
+    const { data, error } = await supabase.rpc('get_miguel_id')
     if (error) {
-      console.error('Error finding admin user:', error);
+      console.error('Error finding admin user via RPC:', error)
+      return { adminId: null, error }
     }
-    
-    return { adminId: data?.id, error }
+    return { adminId: data as unknown as string | null, error: null }
   },
 
   // Additional functions needed by Dashboard

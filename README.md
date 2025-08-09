@@ -224,3 +224,22 @@ For questions or support:
 ---
 
 **Built with ❤️ for the future of web agencies**
+
+### Admin booking wizard & calendar integration
+
+- Admins can book sessions using a 3-step wizard:
+  1) Select mentee
+  2) Pick date/time and duration (conflict check)
+  3) Add details and confirm
+- Booked sessions appear in:
+  - Admin calendar (Session Calendar tab) immediately
+  - User calendar (Interactive Calendar tab) via realtime
+- Files:
+  - `src/components/AdminSessionWizard.tsx`
+  - `src/pages/AdminDashboard.tsx`
+  - `src/pages/Dashboard.tsx`
+
+### Security (RLS)
+
+- RLS enabled for `mentorship_sessions`, `calendar_notes`, `profiles`, `documents`, `goals`.
+- Admins can manage sessions; users see and update their own sessions/notes only.

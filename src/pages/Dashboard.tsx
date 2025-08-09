@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -26,7 +26,7 @@ import {
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
-import { db } from "@/lib/supabase";
+import { db, supabase } from "@/lib/supabase";
 import { MentorshipChat } from "@/components/MentorshipChat";
 
 const Dashboard = () => {
@@ -40,6 +40,7 @@ const Dashboard = () => {
   // Mentorship-specific state
   const [upcomingSessions, setUpcomingSessions] = useState<any[]>([]);
   const [recentSessions, setRecentSessions] = useState<any[]>([]);
+  const [allSessions, setAllSessions] = useState<any[]>([]);
   const [userGoals, setUserGoals] = useState<any[]>([]);
   const [mentorshipStats, setMentorshipStats] = useState<any>(null);
   
@@ -92,13 +93,13 @@ const Dashboard = () => {
         const stats = await db.getMentorshipStats(user.id);
         setMentorshipStats(stats);
 
-        // Load upcoming sessions
+        // Load upcoming sessions and all sessions for calendar rendering
         const { data: upcoming } = await db.getUpcomingSessions(user.id);
         setUpcomingSessions(upcoming || []);
-
-        // Load recent sessions
-        const { data: recent } = await db.getPastSessions(user.id);
-        setRecentSessions(recent || []);
+        const { data: past } = await db.getPastSessions(user.id);
+        setRecentSessions(past || []);
+        const combined = [...(upcoming || []), ...(past || [])];
+        setAllSessions(combined);
 
         // Load active goals
         const { data: goals } = await db.getActiveGoals(user.id);
@@ -113,6 +114,25 @@ const Dashboard = () => {
 
     loadMentorshipData();
   }, [user]);
+
+  // Realtime: update upcoming sessions when bookings change
+  useEffect(() => {
+    if (!user) return;
+    const channel = supabase
+      .channel(`user-sessions-${user.id}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'mentorship_sessions', filter: `student_id=eq.${user.id}` },
+        async () => {
+          const { data: upcoming } = await db.getUpcomingSessions(user.id);
+          setUpcomingSessions(upcoming || []);
+          const { data: past } = await db.getPastSessions(user.id);
+          setAllSessions([...(upcoming || []), ...(past || [])]);
+        }
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [user?.id]);
 
   // Load calendar notes from database
   useEffect(() => {
@@ -331,7 +351,7 @@ const Dashboard = () => {
 
   const hasSessionOnDate = (day: number) => {
     const checkDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), day);
-    return upcomingSessions.some(session => {
+    return allSessions.some(session => {
       const sessionDate = new Date(session.scheduled_at);
       return sessionDate.getFullYear() === checkDate.getFullYear() &&
              sessionDate.getMonth() === checkDate.getMonth() &&
@@ -341,7 +361,7 @@ const Dashboard = () => {
 
   const getSessionsForDate = (day: number) => {
     const checkDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), day);
-    return upcomingSessions.filter(session => {
+    return allSessions.filter(session => {
       const sessionDate = new Date(session.scheduled_at);
       return sessionDate.getFullYear() === checkDate.getFullYear() &&
              sessionDate.getMonth() === checkDate.getMonth() &&
@@ -619,7 +639,7 @@ const Dashboard = () => {
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <div className="bg-gradient-to-r from-blue-50 to-purple-50 rounded-2xl p-6">
+        <div className="bg-gradient-to-r from-gray-50 to-gray-100 rounded-2xl p-6">
                     <div className="flex items-center justify-between mb-4">
                       <div>
                         <h3 className="text-lg font-semibold text-black mb-2">Ready for your next breakthrough?</h3>
@@ -766,7 +786,7 @@ const Dashboard = () => {
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <div className="bg-gradient-to-r from-green-50 to-blue-50 rounded-2xl p-6">
+        <div className="bg-gradient-to-r from-gray-50 to-gray-100 rounded-2xl p-6">
                     <div className="flex items-center justify-between mb-4">
                       <div>
                         <h3 className="text-lg font-semibold text-black mb-2">Ready to level up?</h3>
@@ -836,7 +856,7 @@ const Dashboard = () => {
                               </div>
                               <div className="w-full bg-gray-200 rounded-full h-3">
                                 <div 
-                                  className="bg-gradient-to-r from-blue-500 to-purple-600 h-3 rounded-full transition-all duration-300" 
+        className="bg-gradient-to-r from-black to-gray-700 h-3 rounded-full transition-all duration-300"
                                   style={{ width: `${goal.progress_percentage}%` }}
                                 ></div>
                               </div>
@@ -1088,7 +1108,7 @@ const Dashboard = () => {
                             dayNumber === today.getDate() && 
                             currentDate.getMonth() === today.getMonth() && 
                             currentDate.getFullYear() === today.getFullYear();
-                          const hasStream = isCurrentMonth && hasStreamOnDate(dayNumber);
+                          const hasStream = false; // remove mock streams from calendar color logic
                           const hasNote = isCurrentMonth && hasNoteOnDate(dayNumber);
                           const hasSession = isCurrentMonth && hasSessionOnDate(dayNumber);
                           const isSelected = selectedDate && isCurrentMonth &&
@@ -1121,10 +1141,7 @@ const Dashboard = () => {
                               {hasSession && isCurrentMonth && (
                                 <div className="absolute -top-1 -right-1 w-3 h-3 bg-black rounded-full"></div>
                               )}
-                              {/* Stream indicator */}
-                              {hasStream && isCurrentMonth && !hasSession && (
-                                <div className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full"></div>
-                              )}
+                              {/* Stream indicator (disabled) */}
                               {/* Note indicator */}
                               {hasNote && isCurrentMonth && !hasSession && !hasStream && (
                                 <div className="absolute -top-1 -right-1 w-3 h-3 bg-gray-600 rounded-full"></div>

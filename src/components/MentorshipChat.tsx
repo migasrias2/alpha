@@ -77,7 +77,7 @@ export const MentorshipChat: React.FC<MentorshipChatProps> = ({ className = "" }
       try {
         // Get admin user ID (Miguel)
         const { adminId } = await db.getAdminUserId();
-        setAdminUserId(adminId);
+        setAdminUserId(adminId || null);
 
         // Get user profile
         const { data: profile } = await db.getUserProfile(user.id);
@@ -93,7 +93,7 @@ export const MentorshipChat: React.FC<MentorshipChatProps> = ({ className = "" }
   // Load chat messages
   useEffect(() => {
     const loadMessages = async () => {
-      if (!user || !adminUserId) return;
+      if (!user || !adminUserId) { setLoading(false); return; }
 
       try {
         setLoading(true);
@@ -303,7 +303,7 @@ export const MentorshipChat: React.FC<MentorshipChatProps> = ({ className = "" }
                                   isFromMentor 
                                     ? 'bg-black text-white' 
                                     : isFromCurrentUser
-                                      ? 'bg-blue-500 text-white'
+            ? 'bg-black text-white'
                                       : 'bg-gray-300 text-gray-700'
                                 }`}>
                                   {isFromMentor ? <Crown className="h-4 w-4" /> : 
@@ -333,7 +333,7 @@ export const MentorshipChat: React.FC<MentorshipChatProps> = ({ className = "" }
                               <div className={`flex flex-col ${isFromCurrentUser ? 'items-end' : 'items-start'}`}>
                               <div className={`relative px-4 py-2 break-words ${
                                 isFromCurrentUser 
-                                  ? 'bg-blue-500 text-white rounded-3xl rounded-br-lg' 
+            ? 'bg-black text-white rounded-3xl rounded-br-lg'
                                   : isFromMentor
                                     ? 'bg-gray-900 text-white rounded-3xl rounded-bl-lg'
                                     : 'bg-gray-100 text-gray-900 rounded-3xl rounded-bl-lg'
@@ -343,10 +343,10 @@ export const MentorshipChat: React.FC<MentorshipChatProps> = ({ className = "" }
                                 {message.reply_to_id && (
                                   <div className={`mb-2 p-2 rounded border-l-4 ${
                                     isFromCurrentUser 
-                                      ? 'bg-blue-600 border-blue-200' 
+            ? 'bg-black border-gray-300'
                                       : isFromMentor
                                         ? 'bg-gray-800 border-gray-400'
-                                        : 'bg-white border-blue-500'
+            : 'bg-white border-black'
                                   }`}>
                                     <p className={`text-xs opacity-70 ${
                                       isFromCurrentUser ? 'text-blue-100' : 
@@ -385,7 +385,7 @@ export const MentorshipChat: React.FC<MentorshipChatProps> = ({ className = "" }
                                     {isFromCurrentUser && (
                                       <div className="flex items-center">
                                         {message.read_at ? (
-                                          <CheckCheck className="h-3 w-3 text-blue-200" />
+            <CheckCheck className="h-3 w-3 text-gray-300" />
                                         ) : (
                                           <CheckCheck className="h-3 w-3 text-blue-300" />
                                         )}
@@ -422,7 +422,7 @@ export const MentorshipChat: React.FC<MentorshipChatProps> = ({ className = "" }
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 20, scale: 0.95 }}
               transition={{ duration: 0.2, ease: "easeOut" }}
-              className="mb-3 p-3 bg-gray-50 rounded-lg border-l-4 border-blue-500 shadow-sm"
+        className="mb-3 p-3 bg-gray-50 rounded-lg border-l-4 border-black shadow-sm"
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">

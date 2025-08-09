@@ -80,14 +80,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         console.log('🔍 Admin check result:', { isAdmin, error, email: user.email });
         setIsAdmin(isAdmin);
         
-        // Special redirect for Miguel
-        if (user.email === 'miguelfortesmartins4@gmail.com') {
-          console.log('👑 Miguel detected in AuthContext - forcing admin redirect');
-          if (window.location.pathname === '/login' || window.location.pathname === '/dashboard') {
-            window.location.href = '/admin';
-          }
-        }
-        
         // Redirect admin users to admin dashboard if they're on login or dashboard
         if (isAdmin && (window.location.pathname === '/login' || window.location.pathname === '/dashboard')) {
           console.log('🚀 AuthContext redirecting admin to /admin');
